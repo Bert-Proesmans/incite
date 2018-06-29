@@ -1,0 +1,28 @@
+[package]
+name = "incite"
+version = "0.1.0"
+authors = ["Bert Proesmans <bproesmans@hotmail.com>"]
+build = "pre_build.rs"
+
+[lib]
+name = "incite"
+
+[dependencies]
+typed-builder = "0.1"
+futures-await = {git = "https://github.com/alexcrichton/futures-await", rev="cd38b74"}
+tokio = "0.1"
+tokio-signal = "0.2"
+bytes = "0.4"
+slog = "2"
+slog-envlogger = "2"
+slog-term = "2"
+slog-async = "2"
+error-chain = "0.12"
+failure = "0.1"
+dotenv = "0.13"
+
+[build-dependencies]
+vergen = "0.1"
+
+[dev-dependencies]
+#
