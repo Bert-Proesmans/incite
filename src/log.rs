@@ -3,7 +3,7 @@ use slog_async;
 use slog_envlogger;
 use slog_term;
 
-use version;
+use incite_gen::version;
 
 pub fn system_logger() -> slog::Logger {
     let decorator = slog_term::TermDecorator::new().stderr().build();

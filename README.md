@@ -8,7 +8,7 @@ Server simulation infrastructure.
 2. Install the **Rust Nightly** toolchain. This project uses non-stable features which can only be used when compiling with Nightly releases.
 3. Download/Clone this repository. `https://github.com/Bert-Proesmans/incite.git`
 4. Open a command prompt and change directory to the downloaded sources.
-5. Execute the command `cargo run --release --bin lobby-server`. This command builds the library after downloading and building its dependancies. When compilation succeeds, the file `/src/bin/lobby-server.rs` is used as main entry point.
+5. Execute the command `cargo run --release --bin lobby_server`. This command builds the library after downloading and building its dependancies. When compilation succeeds, the file `/src/bin/lobby_server.rs` is used as main entry point.
 
 # Principles
 

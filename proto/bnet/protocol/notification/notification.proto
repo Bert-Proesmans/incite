@@ -1,0 +1,39 @@
+syntax = "proto2";
+package bnet.protocol.notification;
+
+// Proto extractor compiled unit - https://github.com/HearthSim/proto-extractor
+
+import "bnet/protocol/protocol.proto";
+
+// ref: bnet.protocol.notification.FindClientRequest
+message FindClientRequest {
+	optional bnet.protocol.EntityId entity_id = 1;
+}
+
+// ref: bnet.protocol.notification.FindClientResponse
+message FindClientResponse {
+	optional uint32 label = 1;
+	optional bnet.protocol.ProcessId client_process_id = 2;
+}
+
+// ref: bnet.protocol.notification.Notification
+message Notification {
+	optional bnet.protocol.EntityId sender_id = 1;
+	optional bnet.protocol.EntityId target_id = 2;
+	optional string type = 3;
+	repeated bnet.protocol.Attribute attribute = 4;
+	optional bnet.protocol.EntityId sender_account_id = 5;
+	optional bnet.protocol.EntityId target_account_id = 6;
+	optional string sender_battle_tag = 7;
+}
+
+// ref: bnet.protocol.notification.RegisterClientRequest
+message RegisterClientRequest {
+	optional bnet.protocol.EntityId entity_id = 1;
+}
+
+// ref: bnet.protocol.notification.UnregisterClientRequest
+message UnregisterClientRequest {
+	optional bnet.protocol.EntityId entity_id = 1;
+}
+

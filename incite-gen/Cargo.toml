@@ -1,0 +1,18 @@
+[package]
+name = "incite-gen"
+version = "0.1.0"
+authors = ["Bert Proesmans <bproesmans@hotmail.com>"]
+build = "pre_build.rs"
+
+[lib]
+name = "incite_gen"
+
+[dependencies]
+prost = "0.4"
+prost-derive = "0.4"
+bytes = "0.4"
+
+[build-dependencies]
+vergen = "0.1"
+glob = "0.2"
+prost-build = "0.4"

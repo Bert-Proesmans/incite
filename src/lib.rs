@@ -2,10 +2,12 @@
 
 extern crate bytes;
 extern crate dotenv;
+extern crate incite_gen;
 extern crate slog_async;
 extern crate slog_envlogger;
 extern crate slog_term;
 extern crate tokio;
+extern crate tokio_codec;
 extern crate tokio_signal;
 
 #[macro_use]
@@ -16,12 +18,6 @@ extern crate typed_builder;
 extern crate slog;
 #[macro_use]
 extern crate error_chain;
-
-#[allow(dead_code)]
-mod version {
-    // Provisioning by the pre_build script.
-    include!(concat!(env!("OUT_DIR"), "/version.rs"));
-}
 
 #[derive(Debug)]
 pub enum Signal {
@@ -39,7 +35,7 @@ mod error {
                 description("A user supplied callback failed")
                 display("The supplied callback returned an error.")
             }
-            Interrupted(signal: Signal) {
+            Interrupted(s: Signal) {
                 description("The user interrupted by sending a signal")
                 display("User interrupted program.")
             }
@@ -56,6 +52,7 @@ mod error {
 }
 
 mod log;
+mod protocol;
 mod setup;
 
 pub use self::error::*;

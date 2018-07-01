@@ -1,0 +1,17 @@
+syntax = "proto2";
+package bnet.protocol.profanity;
+
+// Proto extractor compiled unit - https://github.com/HearthSim/proto-extractor
+
+
+// ref: bnet.protocol.profanity.WordFilter
+message WordFilter {
+	optional string type = 1;
+	optional string regex = 2;
+}
+
+// ref: bnet.protocol.profanity.WordFilters
+message WordFilters {
+	repeated WordFilter filters = 1;
+}
+

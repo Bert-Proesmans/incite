@@ -1,0 +1,36 @@
+syntax = "proto2";
+package bnet.protocol.server_pool;
+
+// Proto extractor compiled unit - https://github.com/HearthSim/proto-extractor
+
+import "bnet/protocol/protocol.proto";
+
+// ref: bnet.protocol.server_pool.GetLoadRequest
+message GetLoadRequest {
+}
+
+// ref: bnet.protocol.server_pool.PoolStateRequest
+message PoolStateRequest {
+}
+
+// ref: bnet.protocol.server_pool.PoolStateResponse
+message PoolStateResponse {
+	repeated ServerInfo info = 1;
+}
+
+// ref: bnet.protocol.server_pool.ServerInfo
+message ServerInfo {
+	optional bnet.protocol.ProcessId host = 1;
+	optional bool replace = 2;
+	optional ServerState state = 3;
+	repeated bnet.protocol.Attribute attribute = 4;
+	optional fixed32 program_id = 5;
+}
+
+// ref: bnet.protocol.server_pool.ServerState
+message ServerState {
+	optional float current_load = 1;
+	optional uint32 game_count = 2;
+	optional uint32 player_count = 3;
+}
+

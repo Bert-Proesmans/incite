@@ -1,0 +1,46 @@
+syntax = "proto2";
+package bnet.protocol.risk;
+
+// Proto extractor compiled unit - https://github.com/HearthSim/proto-extractor
+
+
+// ref: bnet.protocol.risk.Attribute
+message Attribute {
+	optional string name = 1;
+	optional Variant value = 2;
+}
+
+// ref: bnet.protocol.risk.EntityId
+message EntityId {
+	optional fixed64 high = 1;
+	optional fixed64 low = 2;
+}
+
+// ref: bnet.protocol.risk.ReportMeterEventRequest
+message ReportMeterEventRequest {
+	optional fixed32 meter_type = 1;
+	optional string event_type = 2;
+	optional string object = 3;
+	optional uint64 additional_penalty_secs = 4;
+	repeated Attribute attribute = 5;
+}
+
+// ref: bnet.protocol.risk.ReportMeterEventResponse
+message ReportMeterEventResponse {
+	optional uint64 penalty_secs = 1;
+	optional uint64 threshold = 2;
+}
+
+// ref: bnet.protocol.risk.Variant
+message Variant {
+	optional bool bool_value = 2;
+	optional int64 int_value = 3;
+	optional double float_value = 4;
+	optional string string_value = 5;
+	optional bytes blob_value = 6;
+	optional bytes message_value = 7;
+	optional string fourcc_value = 8;
+	optional uint64 uint_value = 9;
+	optional EntityId entityid_value = 10;
+}
+

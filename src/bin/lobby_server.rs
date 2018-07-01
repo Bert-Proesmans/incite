@@ -15,6 +15,11 @@ use std::net::SocketAddr;
 fn main() -> Result<(), failure::Error> {
     dotenv().ok();
 
+    // let decorator = slog_term::TermDecorator::new().build();
+    // let drain = slog_term::FullFormat::new(decorator).build().fuse();
+    // let drain = slog_async::Async::new(drain).build().fuse();
+    // let log = slog::Logger::root(drain, o!("version" => "0.5"));
+
     let server_address: SocketAddr = env::var("SERVER_ADDRESS")?.parse()?;
     let server = ServerControl::builder()
         .bind_address(server_address)
