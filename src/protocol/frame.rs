@@ -36,6 +36,7 @@ pub use self::error::*;
 // Overwrite scope with std's Result because Encoder and Decoder traits need it!
 use std::result::Result;
 
+#[derive(Debug)]
 pub struct BNetPacket {
     header: Header,
     body: BytesMut,
@@ -45,6 +46,14 @@ impl BNetPacket {
     fn new(header: Header, body: BytesMut) -> Self {
         Self { header, body }
     }
+
+    pub fn header(&self) -> &Header {
+        &self.header
+    }
+
+    pub fn body(&self) -> &BytesMut {
+        &self.body
+    }
 }
 
 pub struct BNetCodec {
@@ -52,7 +61,6 @@ pub struct BNetCodec {
     header_length: Option<u16>,
     body_size: Option<u32>,
 }
-
 
 impl BNetCodec {
     pub fn new() -> Self {

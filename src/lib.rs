@@ -2,10 +2,7 @@
 
 extern crate bytes;
 extern crate dotenv;
-extern crate incite_gen;
-extern crate slog_async;
-extern crate slog_envlogger;
-extern crate slog_term;
+pub extern crate incite_gen;
 extern crate tokio;
 extern crate tokio_codec;
 extern crate tokio_signal;
@@ -66,8 +63,6 @@ pub struct ServerControl {
     #[default = "None"]
     connect_address: Option<SocketAddr>,
 
-    #[default = "log::system_logger()"]
-    system_logger: slog::Logger,
     #[default = "log::application_logger()"]
     application_logger: slog::Logger,
 }
@@ -77,45 +72,55 @@ impl ServerControl {
     pub fn build_lobby_server<F, E>(
         self,
         on_setup_handler: F,
-    ) -> ServerHandle<impl Future<Item = (), Error = Error>>
+    ) -> ServerHandle<impl Future<Item = (), Error = Error>, impl FnOnce(Error) -> ()>
     where
         F: Future<Item = (), Error = E> + Send + 'static,
         E: std::error::Error + Send + 'static,
     {
+        let logger = self.application_logger.clone();
+
         let on_setup_handler =
             on_setup_handler.map_err(|e| Error::with_chain(e, ErrorKind::UserCallback));
 
         let server_runner = setup::setup_lobby_server(self)
             .map_err(Into::<Error>::into)
-            .join(on_setup_handler)
-            .map(|(server_data, _)| server_data)
             .and_then(|(server, state)| {
-                setup::lobby_handle_connections(server, state).map_err(Into::<Error>::into)
-            });
+                on_setup_handler.join(
+                    setup::lobby_handle_connections(server, state).map_err(Into::<Error>::into),
+                )
+            })
+            .map(|_| ());
 
-        ServerHandle::new(server_runner)
+        let default_error_handler =
+            move |err| crit!(logger, "Accepting clients failed!"; "error" => %err);
+        ServerHandle::new(server_runner, default_error_handler)
     }
 }
 
 #[must_use = "The server is not started until run is called on this structure."]
-pub struct ServerHandle<F>(F)
-where
-    F: Future<Item = (), Error = Error> + Send + 'static;
-
-impl<F> ServerHandle<F>
+pub struct ServerHandle<F, E>(F, E)
 where
     F: Future<Item = (), Error = Error> + Send + 'static,
+    E: FnOnce(Error) -> () + Send + 'static;
+
+impl<F, E> ServerHandle<F, E>
+where
+    F: Future<Item = (), Error = Error> + Send + 'static,
+    E: FnOnce(Error) -> () + Send + 'static,
 {
-    fn new(setup: F) -> Self {
-        ServerHandle(setup)
+    fn new(setup: F, error_handler: E) -> Self {
+        ServerHandle(setup, error_handler)
+    }
+
+    pub fn on_error<NewErr>(self, error_handler: NewErr) -> ServerHandle<F, NewErr>
+    where
+        NewErr: FnOnce(Error) -> () + Send + 'static,
+    {
+        ServerHandle(self.0, error_handler)
     }
 
     pub fn run(self) {
-        let future = self.0.map_err(|err| {
-            // TODO; Find a way to return this error back to the caller of this method.
-            println!("Shutting down system because of following error:\n{:}", err);
-        });
-
+        let future = self.0.map_err(self.1);
         tokio::run(future);
     }
 }
