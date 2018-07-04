@@ -3,12 +3,17 @@ use futures::prelude::*;
 use slog;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tokio;
 use tokio::net::TcpStream;
+use tokio::timer::Deadline;
+use tokio::util::FutureExt;
 use tokio_codec::{Decoder, Framed};
 
 use protocol::frame::BNetCodec;
 use setup::SharedLobbyState;
+
+const SESSION_SETUP_DEADLINE_SECS: u64 = 5;
 
 mod error {
     use protocol::frame;
@@ -24,6 +29,10 @@ mod error {
             ProcedureFail(step: &'static str) {
                 description("The client failed to send the proper response")
                 display("The client didn't respond correctly during '{}'", step)
+            }
+            Timeout {
+                description("The code triggered a timeout error to prevent rogue clients")
+                display("The client failed to respond within the time limit")
             }
             StatePoisoning {
                 description("Some thread holding the lock panicked, resulting in an invalid state")
@@ -60,15 +69,10 @@ impl ClientSession {
     }
 }
 
-#[inline]
 pub fn entry(client: TcpStream, shared_state: Arc<Mutex<SharedLobbyState>>) -> Result<()> {
     let client_address = client.peer_addr()?;
     let codec = BNetCodec::new().framed(client);
-    {
-        let state_guard = shared_state.lock().map_err(|_| ErrorKind::StatePoisoning)?;
-        let logger = state_guard.logger();
-        trace!(logger, "Client accepted"; "address" => ?client_address);
-    }
+
     // Errors can be ignored because the handshake_setup procedure is responsible for
     // allocating resources.
     // Optionally a chain could be made with or_else() to notify some other system
@@ -90,19 +94,32 @@ fn handshake_setup(
         trace!(logger, "Attempting client handshake"; "address" => ?addr);
     }
 
+    let handshake = handshake_internal(addr.clone(), codec)
+        .deadline(Instant::now() + Duration::from_secs(SESSION_SETUP_DEADLINE_SECS))
+        .map_err(|deadline_err| match deadline_err.into_inner() {
+            Some(setup_error) => setup_error,
+            _ => Error::from_kind(ErrorKind::Timeout),
+        });
+    let codec = await!(handshake)?;
+
+    Ok(())
+}
+
+#[async]
+fn handshake_internal(
+    addr: SocketAddr,
+    codec: Framed<TcpStream, BNetCodec>,
+) -> Result<Framed<TcpStream, BNetCodec>> {
     let (rpc_connect, codec) = match await!(codec.into_future()) {
         Ok((Some(frame), stream)) => (frame, stream),
         Ok((None, _)) => Err(ErrorKind::ClientDisconnected)?,
         Err((err, _)) => Err(err)?,
     };
 
-    match (
-        rpc_connect.header().service_id,
-        rpc_connect.header().method_id,
-    ) {
+    match (rpc_connect.header.service_id, rpc_connect.header.method_id) {
         (Some(s_id), Some(m_id)) if s_id == 0 && m_id == 1 => {}
         _ => Err(ErrorKind::ProcedureFail("connect_request"))?,
-    }
+    };
 
-    Ok(())
+    Ok(codec)
 }

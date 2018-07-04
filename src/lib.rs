@@ -78,13 +78,15 @@ impl ServerControl {
         E: std::error::Error + Send + 'static,
     {
         let logger = self.application_logger.clone();
+        let logger_err = self.application_logger.clone();
 
         let on_setup_handler =
             on_setup_handler.map_err(|e| Error::with_chain(e, ErrorKind::UserCallback));
 
         let server_runner = setup::setup_lobby_server(self)
             .map_err(Into::<Error>::into)
-            .and_then(|(server, state)| {
+            .and_then(move |(server, state)| {
+                trace!(logger, "Setup complete");
                 on_setup_handler.join(
                     setup::lobby_handle_connections(server, state).map_err(Into::<Error>::into),
                 )
@@ -92,7 +94,7 @@ impl ServerControl {
             .map(|_| ());
 
         let default_error_handler =
-            move |err| crit!(logger, "Accepting clients failed!"; "error" => %err);
+            move |err| crit!(logger_err, "Accepting clients failed!"; "error" => %err);
         ServerHandle::new(server_runner, default_error_handler)
     }
 }

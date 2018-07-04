@@ -38,21 +38,13 @@ use std::result::Result;
 
 #[derive(Debug)]
 pub struct BNetPacket {
-    header: Header,
-    body: BytesMut,
+    pub header: Header,
+    pub body: BytesMut,
 }
 
 impl BNetPacket {
     fn new(header: Header, body: BytesMut) -> Self {
         Self { header, body }
-    }
-
-    pub fn header(&self) -> &Header {
-        &self.header
-    }
-
-    pub fn body(&self) -> &BytesMut {
-        &self.body
     }
 }
 

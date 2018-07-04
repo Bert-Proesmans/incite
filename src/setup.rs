@@ -16,6 +16,13 @@ mod error {
     use std::io;
 
     error_chain!{
+        errors {
+            StatePoisoning {
+                description("Some thread holding the lock panicked, resulting in an invalid state")
+                display("The shared server state has been poisoned")
+            }
+        }
+
         foreign_links {
             Io(io::Error) #[doc = "Error during IO"];
         }
@@ -65,7 +72,6 @@ pub fn lobby_handle_connections(server: TcpListener, shared_state: SharedLobbySt
 
     let combo_stream = client_stream.select(ctrl_c);
     let shared_state = Arc::new(Mutex::new(shared_state));
-    // let logger = shared_state.lock().unwrap().logger().clone();
 
     // This will keep looping forever until one of the futures transitions into the error state.
     // Alternatively a received signal breaks the loop cleanly.
@@ -73,15 +79,27 @@ pub fn lobby_handle_connections(server: TcpListener, shared_state: SharedLobbySt
     for select_result in combo_stream {
         match select_result {
             (Some(client), None) => {
-                let entry_result = protocol::bnet::session::entry(client, shared_state.clone());
-                if entry_result.is_err() {
-                    warn!(shared_state.lock().unwrap().logger(), "entry returned Err");
+                let client_address = client.peer_addr().unwrap();
+                trace!(shared_state.lock().unwrap().logger(), "Client accepted"; "address" => ?client_address);
+                let entry_result =
+                    protocol::bnet::session::entry(client, shared_state.clone());
+                match entry_result {
+                    Err(error) => error!(
+                        shared_state.lock().map_err(|_| ErrorKind::StatePoisoning)?.logger(),
+                        "Entry failed for client"; "error" => ?error
+                    ),
+                    _ => {}
                 }
             }
             (_, Some(_signal)) => break,
             (None, None) => unreachable!(),
-        }
+        };
     }
+
+    info!(
+        shared_state.lock().unwrap().logger(),
+        "Finished accept loop"
+    );
 
     // NOTE: This future, representing acceptance of new clients, finishes here.
     // The program itself will only stop running after all spawned client futures finished.
