@@ -81,8 +81,7 @@ pub fn lobby_handle_connections(server: TcpListener, shared_state: SharedLobbySt
             (Some(client), None) => {
                 let client_address = client.peer_addr().unwrap();
                 trace!(shared_state.lock().unwrap().logger(), "Client accepted"; "address" => ?client_address);
-                let entry_result =
-                    protocol::bnet::session::entry(client, shared_state.clone());
+                let entry_result = protocol::bnet::session::entry(client, shared_state.clone());
                 match entry_result {
                     Err(error) => error!(
                         shared_state.lock().map_err(|_| ErrorKind::StatePoisoning)?.logger(),

@@ -1,4 +1,4 @@
-use bytes::{BigEndian, BufMut, ByteOrder, BytesMut};
+use bytes::{BigEndian, BufMut, ByteOrder, BytesMut, Bytes};
 use tokio_codec::{Decoder, Encoder};
 
 use incite_gen::prost::Message;
@@ -39,11 +39,11 @@ use std::result::Result;
 #[derive(Debug)]
 pub struct BNetPacket {
     pub header: Header,
-    pub body: BytesMut,
+    pub body: Bytes,
 }
 
 impl BNetPacket {
-    fn new(header: Header, body: BytesMut) -> Self {
+    fn new(header: Header, body: Bytes) -> Self {
         Self { header, body }
     }
 }
@@ -92,9 +92,9 @@ impl Decoder for BNetCodec {
                 return Ok(None);
             }
 
-            let header_length: u16 = BigEndian::read_u16(&src);
+            let length_buf = src.split_to(HEADER_PREAMBLE_LENGTH);
+            let header_length: u16 = BigEndian::read_u16(&length_buf);
             self.header_length = Some(header_length);
-            src.split_to(HEADER_PREAMBLE_LENGTH);
         }
 
         if self.header == None {
@@ -103,26 +103,24 @@ impl Decoder for BNetCodec {
                 return Ok(None);
             }
 
-            let decoding_buffer = src.clone().freeze();
-            let header = Header::decode(decoding_buffer)?;
+            let header_buf = src.split_to(total_length);
+            let header = Header::decode(header_buf.freeze())?;
 
-            let body_size = header
-                .size
-                .ok_or_else(|| ErrorKind::MissingData("Size".into()))?;
+            let body_size = header.size.ok_or_else(|| ErrorKind::MissingData("Size".into()))?;
             self.body_size = Some(body_size);
             self.header = Some(header);
-
-            src.split_to(total_length);
         }
 
-        let body_size = self.body_size.unwrap() as usize;
-        if src.len() >= body_size {
-            let header = self.header.take().unwrap();
-            let body = src.split_to(body_size);
-            self.header_length.take();
+        if let Some(body_size) = self.body_size {
+            let body_size = body_size as usize;
+            if src.len() >= body_size {
+                let header = self.header.take().unwrap();
+                let body = src.split_to(body_size);
+                self.header_length.take();
 
-            let packet = BNetPacket::new(header, body);
-            return Ok(Some(packet));
+                let packet = BNetPacket::new(header, body.freeze());
+                return Ok(Some(packet));
+            }
         }
 
         Ok(None)

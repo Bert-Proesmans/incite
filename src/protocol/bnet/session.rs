@@ -1,5 +1,6 @@
 use futures::prelude::await;
 use futures::prelude::*;
+use incite_gen::prost::Message;
 use slog;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -10,12 +11,14 @@ use tokio::timer::Deadline;
 use tokio::util::FutureExt;
 use tokio_codec::{Decoder, Framed};
 
+use incite_gen::proto::bnet::protocol::connection::ConnectRequest;
 use protocol::frame::BNetCodec;
 use setup::SharedLobbyState;
 
 const SESSION_SETUP_DEADLINE_SECS: u64 = 5;
 
 mod error {
+    use incite_gen::prost;
     use protocol::frame;
     use std::io;
     use std::sync;
@@ -77,7 +80,13 @@ pub fn entry(client: TcpStream, shared_state: Arc<Mutex<SharedLobbyState>>) -> R
     // allocating resources.
     // Optionally a chain could be made with or_else() to notify some other system
     // about handshake failure.
-    let client_handshake = handshake_setup(client_address, codec, shared_state).map_err(|_| ());
+    let client_handshake =
+        handshake_setup(client_address, codec, shared_state.clone()).map_err(move |error| {
+            // TODO; Remove unwrap
+            let state_guard = shared_state.lock().unwrap();
+            let logger = state_guard.logger();
+            trace!(logger, "Handshake failed"; "error" => ?error);
+        });
     tokio::spawn(client_handshake);
     Ok(())
 }
@@ -94,7 +103,7 @@ fn handshake_setup(
         trace!(logger, "Attempting client handshake"; "address" => ?addr);
     }
 
-    let handshake = handshake_internal(addr.clone(), codec)
+    let handshake = handshake_internal(addr.clone(), codec, shared_state.clone())
         .deadline(Instant::now() + Duration::from_secs(SESSION_SETUP_DEADLINE_SECS))
         .map_err(|deadline_err| match deadline_err.into_inner() {
             Some(setup_error) => setup_error,
@@ -109,6 +118,7 @@ fn handshake_setup(
 fn handshake_internal(
     addr: SocketAddr,
     codec: Framed<TcpStream, BNetCodec>,
+    shared_state: Arc<Mutex<SharedLobbyState>>,
 ) -> Result<Framed<TcpStream, BNetCodec>> {
     let (rpc_connect, codec) = match await!(codec.into_future()) {
         Ok((Some(frame), stream)) => (frame, stream),
@@ -121,5 +131,18 @@ fn handshake_internal(
         _ => Err(ErrorKind::ProcedureFail("connect_request"))?,
     };
 
+    let request = ConnectRequest::decode(&rpc_connect.body)
+        .map_err(|_| ErrorKind::ProcedureFail("connect_request"))?;
+    {
+        let state_guard = shared_state.lock().map_err(|_| ErrorKind::StatePoisoning)?;
+        let logger = state_guard.logger();
+        trace!(logger, "ConnectRequest"; "data" => ?request);
+    }
+
+    {
+        let state_guard = shared_state.lock().map_err(|_| ErrorKind::StatePoisoning)?;
+        let logger = state_guard.logger();
+        trace!(logger, "Handshake finished");
+    }
     Ok(codec)
 }
