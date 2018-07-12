@@ -6,22 +6,19 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio;
-use tokio::net::TcpStream;
-use tokio::timer::Deadline;
-use tokio::util::FutureExt;
+use tokio_tcp::TcpStream;
+use tokio_timer::Deadline;
 use tokio_codec::{Decoder, Framed};
 
 use incite_gen::proto::bnet::protocol::connection::ConnectRequest;
 use protocol::frame::BNetCodec;
-use setup::SharedLobbyState;
+use servers::lobby::SharedLobbyState;
 
 const SESSION_SETUP_DEADLINE_SECS: u64 = 5;
 
 mod error {
-    use incite_gen::prost;
     use protocol::frame;
     use std::io;
-    use std::sync;
 
     error_chain!{
         errors {
@@ -64,9 +61,9 @@ pub struct ClientSession {
 
 impl ClientSession {
     fn new(
-        shared_state: Arc<Mutex<SharedLobbyState>>,
-        addr: SocketAddr,
-        logger: slog::Logger,
+        _shared_state: Arc<Mutex<SharedLobbyState>>,
+        _addr: SocketAddr,
+        _logger: slog::Logger,
     ) -> Self {
         unimplemented!()
     }
@@ -103,20 +100,20 @@ fn handshake_setup(
         trace!(logger, "Attempting client handshake"; "address" => ?addr);
     }
 
-    let handshake = handshake_internal(addr.clone(), codec, shared_state.clone())
-        .deadline(Instant::now() + Duration::from_secs(SESSION_SETUP_DEADLINE_SECS))
-        .map_err(|deadline_err| match deadline_err.into_inner() {
+    let handshake = handshake_internal(addr.clone(), codec, shared_state.clone());
+    let timed_handshake = Deadline::new(handshake, Instant::now() + Duration::from_secs(SESSION_SETUP_DEADLINE_SECS));
+    let handshake = timed_handshake.map_err(|deadline_err| match deadline_err.into_inner() {
             Some(setup_error) => setup_error,
             _ => Error::from_kind(ErrorKind::Timeout),
         });
-    let codec = await!(handshake)?;
+    let _codec = await!(handshake)?;
 
     Ok(())
 }
 
 #[async]
 fn handshake_internal(
-    addr: SocketAddr,
+    _addr: SocketAddr,
     codec: Framed<TcpStream, BNetCodec>,
     shared_state: Arc<Mutex<SharedLobbyState>>,
 ) -> Result<Framed<TcpStream, BNetCodec>> {

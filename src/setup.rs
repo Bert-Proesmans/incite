@@ -1,26 +1,25 @@
-use futures::prelude::await;
 use futures::prelude::*;
-use incite_gen::version;
 use slog;
+use std;
 use std::net::SocketAddr;
-use std::panic::UnwindSafe;
-use std::sync::{Arc, Mutex};
 use tokio;
-use tokio::net::TcpListener;
-use tokio_signal;
 
-use super::protocol;
-use super::{ServerControl, Signal};
+use super::{log, servers};
 
 mod error {
+    use super::*;
     use std::io;
 
-    error_chain!{
+    error_chain! {
         errors {
-            StatePoisoning {
-                description("Some thread holding the lock panicked, resulting in an invalid state")
-                display("The shared server state has been poisoned")
+            UserCallback {
+                description("A user supplied callback failed")
+                display("The supplied callback returned an error.")
             }
+        }
+
+        links {
+            LobbyServer(servers::lobby::Error, servers::lobby::ErrorKind);
         }
 
         foreign_links {
@@ -31,76 +30,74 @@ mod error {
 
 pub use self::error::*;
 
-pub struct SharedLobbyState {
-    logger: slog::Logger,
-    last_signal: Signal,
+#[derive(Debug, TypedBuilder)]
+#[must_use = "Setup a server by consuming this structure."]
+pub struct ServerConfig {
+    pub bind_address: SocketAddr,
+    #[default = "None"]
+    pub connect_address: Option<SocketAddr>,
+
+    #[default = "log::application_logger()"]
+    pub application_logger: slog::Logger,
 }
 
-impl SharedLobbyState {
-    pub fn logger(&self) -> &slog::Logger {
-        &self.logger
+impl ServerConfig {
+    // NOTE: on_setup_handler should be a lightweight future!
+    pub fn build_lobby_server<F, E>(
+        self,
+        on_setup_handler: F,
+    ) -> ServerHandle<impl Future<Item = (), Error = Error>, impl FnOnce(Error) -> ()>
+    where
+        F: Future<Item = (), Error = E> + Send + 'static,
+        E: std::error::Error + Send + 'static,
+    {
+        let logger = self.application_logger.clone();
+        let logger_err = self.application_logger.clone();
+
+        let on_setup_handler =
+            on_setup_handler.map_err(|e| Error::with_chain(e, ErrorKind::UserCallback));
+
+        let server_runner = servers::lobby::setup_server(self)
+            .map_err(Into::<Error>::into)
+            .and_then(move |(server, state)| {
+                trace!(logger, "Setup complete");
+                on_setup_handler.join(
+                    servers::lobby::handle_connections(server, state)
+                        .map_err(Into::<Error>::into),
+                )
+            })
+            .map(|_| ());
+
+        let default_error_handler =
+            move |err| crit!(logger_err, "Accepting clients failed!"; "error" => %err);
+        ServerHandle::new(server_runner, default_error_handler)
     }
 }
 
-#[async]
-pub fn setup_lobby_server(control: ServerControl) -> Result<(TcpListener, SharedLobbyState)> {
-    let ServerControl {
-        application_logger,
-        bind_address,
-        ..
-    } = control;
+#[must_use = "The server is not started until run is called on this structure."]
+pub struct ServerHandle<F, E>(F, E)
+where
+    F: Future<Item = (), Error = Error> + Send + 'static,
+    E: FnOnce(Error) -> () + Send + 'static;
 
-    let server = TcpListener::bind(&bind_address)?;
-    info!(application_logger, "Server bound"; "endpoint" => ?bind_address);
-
-    let shared_state = SharedLobbyState {
-        logger: application_logger,
-        last_signal: Signal::None,
-    };
-    Ok((server, shared_state))
-}
-
-#[async]
-pub fn lobby_handle_connections(server: TcpListener, shared_state: SharedLobbyState) -> Result<()> {
-    let ctrl_c = await!(tokio_signal::ctrl_c())?
-        .map(|_| (None, Some(Signal::CtrlC)))
-        .map_err(Into::<Error>::into);
-    let client_stream = server
-        .incoming()
-        .map(|client| (Some(client), None))
-        .map_err(Into::<Error>::into);
-
-    let combo_stream = client_stream.select(ctrl_c);
-    let shared_state = Arc::new(Mutex::new(shared_state));
-
-    // This will keep looping forever until one of the futures transitions into the error state.
-    // Alternatively a received signal breaks the loop cleanly.
-    #[async]
-    for select_result in combo_stream {
-        match select_result {
-            (Some(client), None) => {
-                let client_address = client.peer_addr().unwrap();
-                trace!(shared_state.lock().unwrap().logger(), "Client accepted"; "address" => ?client_address);
-                let entry_result = protocol::bnet::session::entry(client, shared_state.clone());
-                match entry_result {
-                    Err(error) => error!(
-                        shared_state.lock().map_err(|_| ErrorKind::StatePoisoning)?.logger(),
-                        "Entry failed for client"; "error" => ?error
-                    ),
-                    _ => {}
-                }
-            }
-            (_, Some(_signal)) => break,
-            (None, None) => unreachable!(),
-        };
+impl<F, E> ServerHandle<F, E>
+where
+    F: Future<Item = (), Error = Error> + Send + 'static,
+    E: FnOnce(Error) -> () + Send + 'static,
+{
+    fn new(setup: F, error_handler: E) -> Self {
+        ServerHandle(setup, error_handler)
     }
 
-    info!(
-        shared_state.lock().unwrap().logger(),
-        "Finished accept loop"
-    );
+    pub fn on_error<NewErr>(self, error_handler: NewErr) -> ServerHandle<F, NewErr>
+    where
+        NewErr: FnOnce(Error) -> () + Send + 'static,
+    {
+        ServerHandle(self.0, error_handler)
+    }
 
-    // NOTE: This future, representing acceptance of new clients, finishes here.
-    // The program itself will only stop running after all spawned client futures finished.
-    Ok(())
+    pub fn run(self) {
+        let future = self.0.map_err(self.1);
+        tokio::run(future);
+    }
 }

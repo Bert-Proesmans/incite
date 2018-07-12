@@ -1,8 +1,6 @@
 extern crate incite;
-#[macro_use]
 extern crate failure;
 extern crate dotenv;
-#[macro_use]
 extern crate futures_await as futures;
 #[macro_use]
 extern crate slog;
@@ -13,8 +11,7 @@ extern crate slog_term;
 
 use dotenv::dotenv;
 use futures::future::lazy;
-use futures::prelude::*;
-use incite::ServerControl;
+use incite::setup::ServerConfig;
 use slog::Drain;
 use std::env;
 use std::fs::OpenOptions;
@@ -46,7 +43,7 @@ fn main() -> Result<(), failure::Error> {
     let logger = slog_async::Async::new(multiplexed_logger).build();
     let logger = slog::Logger::root(logger.fuse(), o!());
 
-    let server = ServerControl::builder()
+    let server = ServerConfig::builder()
         .bind_address(server_address)
         .application_logger(logger)
         .build();

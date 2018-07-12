@@ -1,4 +1,4 @@
-use bytes::{BigEndian, BufMut, ByteOrder, BytesMut, Bytes};
+use bytes::{BigEndian, BufMut, ByteOrder, Bytes, BytesMut};
 use tokio_codec::{Decoder, Encoder};
 
 use incite_gen::prost::Message;
@@ -106,7 +106,9 @@ impl Decoder for BNetCodec {
             let header_buf = src.split_to(total_length);
             let header = Header::decode(header_buf.freeze())?;
 
-            let body_size = header.size.ok_or_else(|| ErrorKind::MissingData("Size".into()))?;
+            let body_size = header
+                .size
+                .ok_or_else(|| ErrorKind::MissingData("Size".into()))?;
             self.body_size = Some(body_size);
             self.header = Some(header);
         }
