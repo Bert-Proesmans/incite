@@ -18,12 +18,21 @@ use std::fs::OpenOptions;
 use std::net::SocketAddr;
 use std::path::Path;
 
+const FALLBACK_SRV_ADDR: &str = "127.0.0.1:1119";
+const FALLBACK_LOG_PATH: &str = "./server.log";
+
 fn main() -> Result<(), failure::Error> {
     dotenv().ok();
 
-    let server_address: SocketAddr = env::var("SERVER_ADDRESS")?.parse()?;
-    let log_path_var = env::var("LOG_FILEPATH")?;
-    let log_path = Path::new(&log_path_var);
+    let server_address: SocketAddr = match env::var("SERVER_ADDRESS") {
+        Ok(v) => v.parse()?,
+        Err(_) => FALLBACK_SRV_ADDR.parse().unwrap(),
+    };
+    let log_path = match env::var("LOG_FILEPATH") {
+        Ok(v) => v,
+        Err(_) => FALLBACK_LOG_PATH.into(),
+    };
+    let log_path = Path::new(&log_path);
 
     let log_file = OpenOptions::new()
         .create(true)
