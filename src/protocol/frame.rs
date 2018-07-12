@@ -92,7 +92,14 @@ impl Decoder for BNetCodec {
                 return Ok(None);
             }
 
-            let length_buf = src.split_to(HEADER_PREAMBLE_LENGTH);
+            let length_buf = src.split_to(HEADER_PREAMBLE_LENGTH).freeze();
+            // TLS detection
+            // https://stackoverflow.com/a/10355804
+            match (length_buf[0], length_buf[1]) {
+                (0x16, version) if version <= 0x03 => return Err(ErrorKind::TLSEnabled)?,
+                _ => {},
+            }
+
             let header_length: u16 = BigEndian::read_u16(&length_buf);
             self.header_length = Some(header_length);
         }
