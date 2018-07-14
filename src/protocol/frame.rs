@@ -97,7 +97,7 @@ impl Decoder for BNetCodec {
             // https://stackoverflow.com/a/10355804
             match (length_buf[0], length_buf[1]) {
                 (0x16, version) if version <= 0x03 => return Err(ErrorKind::TLSEnabled)?,
-                _ => {},
+                _ => {}
             }
 
             let header_length: u16 = BigEndian::read_u16(&length_buf);

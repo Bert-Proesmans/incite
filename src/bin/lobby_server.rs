@@ -1,7 +1,7 @@
-extern crate incite;
-extern crate failure;
 extern crate dotenv;
+extern crate failure;
 extern crate futures_await as futures;
+extern crate incite;
 #[macro_use]
 extern crate slog;
 extern crate slog_async;
@@ -28,10 +28,7 @@ fn main() -> Result<(), failure::Error> {
         Ok(v) => v.parse()?,
         Err(_) => FALLBACK_SRV_ADDR.parse().unwrap(),
     };
-    let log_path = match env::var("LOG_FILEPATH") {
-        Ok(v) => v,
-        Err(_) => FALLBACK_LOG_PATH.into(),
-    };
+    let log_path = env::var("LOG_FILEPATH").unwrap_or_else(|_| FALLBACK_LOG_PATH.into());
     let log_path = Path::new(&log_path);
 
     let log_file = OpenOptions::new()

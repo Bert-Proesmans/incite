@@ -62,8 +62,7 @@ impl ServerConfig {
             .and_then(move |(server, state)| {
                 trace!(logger, "Setup complete");
                 on_setup_handler.join(
-                    servers::lobby::handle_connections(server, state)
-                        .map_err(Into::<Error>::into),
+                    servers::lobby::handle_connections(server, state).map_err(Into::<Error>::into),
                 )
             })
             .map(|_| ());

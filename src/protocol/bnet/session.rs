@@ -6,9 +6,9 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio;
+use tokio_codec::{Decoder, Framed};
 use tokio_tcp::TcpStream;
 use tokio_timer::Deadline;
-use tokio_codec::{Decoder, Framed};
 
 use incite_gen::proto::bnet::protocol::connection::ConnectRequest;
 use protocol::frame::BNetCodec;
@@ -101,11 +101,14 @@ fn handshake_setup(
     }
 
     let handshake = handshake_internal(addr.clone(), codec, shared_state.clone());
-    let timed_handshake = Deadline::new(handshake, Instant::now() + Duration::from_secs(SESSION_SETUP_DEADLINE_SECS));
+    let timed_handshake = Deadline::new(
+        handshake,
+        Instant::now() + Duration::from_secs(SESSION_SETUP_DEADLINE_SECS),
+    );
     let handshake = timed_handshake.map_err(|deadline_err| match deadline_err.into_inner() {
-            Some(setup_error) => setup_error,
-            _ => Error::from_kind(ErrorKind::Timeout),
-        });
+        Some(setup_error) => setup_error,
+        _ => Error::from_kind(ErrorKind::Timeout),
+    });
     let _codec = await!(handshake)?;
 
     Ok(())

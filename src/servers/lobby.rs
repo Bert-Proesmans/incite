@@ -1,12 +1,12 @@
-use slog;
 use futures::prelude::await;
 use futures::prelude::*;
-use tokio_tcp::TcpListener;
-use tokio_signal;
+use slog;
 use std::sync::{Arc, Mutex};
+use tokio_signal;
+use tokio_tcp::TcpListener;
 
-use ::{Signal, protocol};
-use ::setup::ServerConfig;
+use setup::ServerConfig;
+use {protocol, Signal};
 
 mod error {
     use std::io;

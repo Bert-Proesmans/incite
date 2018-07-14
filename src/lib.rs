@@ -4,6 +4,7 @@
 #![allow(dead_code)]
 
 extern crate bytes;
+extern crate chrono;
 extern crate dotenv;
 pub extern crate incite_gen;
 extern crate tokio;
@@ -20,9 +21,14 @@ extern crate typed_builder;
 extern crate slog;
 #[macro_use]
 extern crate error_chain;
+#[macro_use]
+extern crate diesel;
 
 mod log;
+pub mod models;
 mod protocol;
+#[allow(missing_docs)]
+pub mod schema;
 mod servers;
 pub mod setup;
 
