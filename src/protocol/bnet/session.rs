@@ -74,7 +74,7 @@ pub fn entry(client: TcpStream, shared_state: Arc<Mutex<SharedLobbyState>>) -> R
     let codec = BNetCodec::new().framed(client);
 
     // Errors can be ignored because the handshake_setup procedure is responsible for
-    // allocating resources.
+    // allocation+cleanup of resources.
     // Optionally a chain could be made with or_else() to notify some other system
     // about handshake failure.
     let client_handshake =
@@ -127,7 +127,7 @@ fn handshake_internal(
     };
 
     match (rpc_connect.header.service_id, rpc_connect.header.method_id) {
-        (Some(s_id), Some(m_id)) if s_id == 0 && m_id == 1 => {}
+        (s_id, Some(m_id)) if s_id == 0 && m_id == 1 => {}
         _ => Err(ErrorKind::ProcedureFail("connect_request"))?,
     };
 
