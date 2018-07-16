@@ -2,10 +2,16 @@
 // TODO; Remove this bandaid.
 // Also introduce a #[deny(missing_docs, dead_code)] to keep the code clean.
 #![allow(dead_code)]
+// TODO: Remove the following attribute.
+// Diesel dependancy needs to be updated because it performs imports inside its macros without explicit
+// path. See https://github.com/rust-lang/rust/issues/50504.
+// This flag is allowed to reduce terminal noise while compiling.
+#![allow(proc_macro_derive_resolution_fallback)]
 
 extern crate bytes;
 extern crate chrono;
 extern crate dotenv;
+extern crate failure;
 pub extern crate incite_gen;
 extern crate tokio;
 extern crate tokio_codec;
@@ -24,12 +30,14 @@ extern crate error_chain;
 #[macro_use]
 extern crate diesel;
 
-mod log;
+pub mod log;
 pub mod models;
-mod protocol;
+pub mod protocol;
 #[allow(missing_docs)]
 pub mod schema;
-mod servers;
+pub mod servers;
+pub mod service;
+pub mod services;
 pub mod setup;
 
 #[derive(Debug)]
@@ -38,7 +46,7 @@ pub enum Signal {
     TermQuit,
 }
 
-mod error {
+pub mod error {
     use super::*;
     use std::io;
 
@@ -52,6 +60,7 @@ mod error {
 
         links {
             Setup(setup::Error, setup::ErrorKind);
+            Lobby(servers::lobby::Error, servers::lobby::ErrorKind);
         }
 
         foreign_links {
@@ -59,3 +68,4 @@ mod error {
         }
     }
 }
+pub use self::error::*;

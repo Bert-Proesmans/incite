@@ -1,8 +1,10 @@
+use failure;
+use futures::prelude::await;
 use futures::prelude::*;
 use slog;
-use std;
 use std::net::SocketAddr;
 use tokio;
+use tokio_tcp::TcpListener;
 
 use super::{log, servers};
 
@@ -12,14 +14,10 @@ mod error {
 
     error_chain! {
         errors {
-            UserCallback {
+            UserCallback(err: failure::Error) {
                 description("A user supplied callback failed")
-                display("The supplied callback returned an error.")
+                display("The supplied callback returned an error.\n{}", err)
             }
-        }
-
-        links {
-            LobbyServer(servers::lobby::Error, servers::lobby::ErrorKind);
         }
 
         foreign_links {
@@ -27,7 +25,6 @@ mod error {
         }
     }
 }
-
 pub use self::error::*;
 
 #[derive(Debug, TypedBuilder)]
@@ -46,43 +43,60 @@ impl ServerConfig {
     pub fn build_lobby_server<F, E>(
         self,
         on_setup_handler: F,
-    ) -> ServerHandle<impl Future<Item = (), Error = Error>, impl FnOnce(Error) -> ()>
+    ) -> ServerHandle<impl Future<Item = (), Error = ::Error>, impl FnOnce(::Error) -> ()>
     where
         F: Future<Item = (), Error = E> + Send + 'static,
-        E: std::error::Error + Send + 'static,
+        E: failure::Fail,
     {
-        let logger = self.application_logger.clone();
-        let logger_err = self.application_logger.clone();
+        let ServerConfig {
+            application_logger,
+            bind_address,
+            ..
+        } = self;
 
-        let on_setup_handler =
-            on_setup_handler.map_err(|e| Error::with_chain(e, ErrorKind::UserCallback));
-
-        let server_runner = servers::lobby::setup_server(self)
-            .map_err(Into::<Error>::into)
-            .and_then(move |(server, state)| {
-                trace!(logger, "Setup complete");
-                on_setup_handler.join(
-                    servers::lobby::handle_connections(server, state).map_err(Into::<Error>::into),
-                )
-            })
-            .map(|_| ());
+        let logger_err = application_logger.clone();
+        let logger_build = application_logger.clone();
 
         let default_error_handler =
             move |err| crit!(logger_err, "Accepting clients failed!"; "error" => %err);
-        ServerHandle::new(server_runner, default_error_handler)
+
+        let server_build = async_block!{
+            let server = TcpListener::bind(&bind_address)?;
+            info!(logger_build, "Server bound"; "endpoint" => ?bind_address);
+            let shared_state = servers::lobby::LobbyState::default();
+
+            await!(on_setup_handler.map_err(|e| {
+                let erased_error = failure::Error::from(e);
+                ErrorKind::UserCallback(erased_error)
+            }))?;
+            trace!(logger_build, "Setup complete");
+            Ok::<_, Error>((server, shared_state))
+        };
+
+        let server_future = server_build
+            // Transform the error
+            .map_err(Into::into)
+            .and_then(move |(server, state)| {
+                let logger = application_logger;
+                servers::lobby::handle_connections(server, state, logger)
+                .map_err(Into::into)
+            })
+            .map(|_| ());
+
+        ServerHandle::new(server_future, default_error_handler)
     }
 }
 
 #[must_use = "The server is not started until run is called on this structure."]
 pub struct ServerHandle<F, E>(F, E)
 where
-    F: Future<Item = (), Error = Error> + Send + 'static,
-    E: FnOnce(Error) -> () + Send + 'static;
+    F: Future<Item = ()> + Send + 'static,
+    E: FnOnce(<F as Future>::Error) -> () + Send + 'static;
 
 impl<F, E> ServerHandle<F, E>
 where
-    F: Future<Item = (), Error = Error> + Send + 'static,
-    E: FnOnce(Error) -> () + Send + 'static,
+    F: Future<Item = ()> + Send + 'static,
+    E: FnOnce(<F as Future>::Error) -> () + Send + 'static,
 {
     fn new(setup: F, error_handler: E) -> Self {
         ServerHandle(setup, error_handler)
@@ -90,7 +104,7 @@ where
 
     pub fn on_error<NewErr>(self, error_handler: NewErr) -> ServerHandle<F, NewErr>
     where
-        NewErr: FnOnce(Error) -> () + Send + 'static,
+        NewErr: FnOnce(F::Error) -> () + Send + 'static,
     {
         ServerHandle(self.0, error_handler)
     }

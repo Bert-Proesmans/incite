@@ -7,7 +7,7 @@ use incite_gen::proto::bnet::protocol::Header;
 // 2 bytes long preamble, interpreted as U16BE
 const HEADER_PREAMBLE_LENGTH: usize = 2;
 
-mod error {
+pub mod error {
     use incite_gen::prost;
     use std::io;
 
@@ -33,8 +33,7 @@ mod error {
 }
 
 pub use self::error::*;
-// Overwrite scope with std's Result because Encoder and Decoder traits need it!
-use std::result::Result;
+type StdResult<O, E> = ::std::result::Result<O, E>;
 
 #[derive(Debug)]
 pub struct BNetPacket {
@@ -68,7 +67,11 @@ impl Encoder for BNetCodec {
     type Item = BNetPacket;
     type Error = Error;
 
-    fn encode(&mut self, item: BNetPacket, destination: &mut BytesMut) -> Result<(), Self::Error> {
+    fn encode(
+        &mut self,
+        item: BNetPacket,
+        destination: &mut BytesMut,
+    ) -> StdResult<(), Self::Error> {
         let BNetPacket { header, body } = item;
         let data_length = HEADER_PREAMBLE_LENGTH + header.encoded_len() + body.len();
         destination.reserve(data_length);
@@ -86,7 +89,7 @@ impl Decoder for BNetCodec {
     type Item = BNetPacket;
     type Error = Error;
 
-    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+    fn decode(&mut self, src: &mut BytesMut) -> StdResult<Option<Self::Item>, Self::Error> {
         if self.header_length == None {
             if src.len() < 2 {
                 return Ok(None);

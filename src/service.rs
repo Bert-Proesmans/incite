@@ -1,4 +1,3 @@
-
 /*
  * Known hashes
  *
@@ -53,7 +52,7 @@
 const FNV1A_INIT: u32 = 0x811c9dc5;
 const FNV1A_PRIME: u32 = 0x01000193;
 
-mod error {
+pub mod error {
     use incite_gen::prost;
 
     error_chain!{
@@ -70,39 +69,38 @@ mod error {
         }
     }
 }
-
-pub use self::error::Error as RPCError;
+pub use self::error::*;
 
 pub fn hash_service_name<S: AsRef<str>>(name: S) -> u32 {
-	let mut hash = FNV1A_INIT;
-	for byte in name.as_ref().bytes() {
-		hash = hash ^ byte as u32;
-		hash = hash.overflowing_mul(FNV1A_PRIME).0;
-	}
+    let mut hash = FNV1A_INIT;
+    for byte in name.as_ref().bytes() {
+        hash = hash ^ byte as u32;
+        hash = hash.overflowing_mul(FNV1A_PRIME).0;
+    }
 
-	return hash;
+    return hash;
 }
 
 pub trait RPCService {
-	fn get_name() -> &'static str;
-	fn get_hash() -> u32;
-	fn get_methods() -> [&'static str; 10];
+    fn get_name() -> &'static str;
+    fn get_hash() -> u32;
+    fn get_methods() -> [&'static str; 10];
 
-	// fn invoke(&mut self, method: u32, data: Bytes) -> impl Future<Item=Option<Bytes>, Error=RPCError>;
+    // fn invoke(&mut self, method: u32, data: Bytes) -> impl Future<Item=Option<Bytes>, Error=RPCError>;
 }
 
 #[cfg(test)]
 mod test {
-	use super::*;
+    use super::*;
 
-	#[test]
-	fn hash_verification() {
-	    let test_one = "bnet.protocol.authentication.AuthenticationServer";
-	    let hash_one = hash_service_name(test_one);
-	    assert_eq!(233634817, hash_one);
+    #[test]
+    fn hash_verification() {
+        let test_one = "bnet.protocol.authentication.AuthenticationServer";
+        let hash_one = hash_service_name(test_one);
+        assert_eq!(233634817, hash_one);
 
-	    let test_two = "bnet.protocol.channel.ChannelSubscriber";
-	    let hash_two = hash_service_name(test_two);
-	    assert_eq!(3213656212, hash_two);
-	}
+        let test_two = "bnet.protocol.channel.ChannelSubscriber";
+        let hash_two = hash_service_name(test_two);
+        assert_eq!(3213656212, hash_two);
+    }
 }
