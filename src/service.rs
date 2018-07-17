@@ -47,7 +47,7 @@
  */
 
 // use bytes::Bytes;
-// use futures::prelude::*;
+use futures::prelude::*;
 
 const FNV1A_INIT: u32 = 0x811c9dc5;
 const FNV1A_PRIME: u32 = 0x01000193;
@@ -62,9 +62,17 @@ pub mod error {
         }
 
         errors {
+            UnknownRequest(service_name: &'static str) {
+                description("Not enough information is provided to execute the request")
+                display("A malformed request for service {} has been received", service_name)
+            }
             InvalidRequest(method_id: u32, service_name: &'static str) {
                 description("The request is malformed")
-                display("Received a malformed request for service {}, method {}", service_name, method_id)
+                display("A malformed request for service {}, method {} was received", service_name, method_id)
+            }
+            InvalidResponse(token: u32) {
+                description("Unexpected response")
+                display("The client sent an ad-hoc response")
             }
         }
     }
@@ -81,12 +89,57 @@ pub fn hash_service_name<S: AsRef<str>>(name: S) -> u32 {
     return hash;
 }
 
+#[derive(Debug)]
+pub struct Request<Packet>(Packet);
+
+impl<Packet> Request<Packet> {
+    pub fn new(data: Packet) -> Self {
+        Request(data)
+    }
+
+    pub fn into_inner(self) -> Packet {
+        self.0
+    }
+
+    pub fn as_ref(&self) -> Request<&Packet> {
+        Request::new(&self.0)
+    }
+}
+
+#[derive(Debug)]
+pub struct Response<Packet>(Packet);
+
+impl<Packet> Response<Packet> {
+    pub fn new(data: Packet) -> Self {
+        Response(data)
+    }
+
+    pub fn into_inner(self) -> Packet {
+        self.0
+    }
+
+    pub fn as_ref(&self) -> Response<&Packet> {
+        Response::new(&self.0)
+    }
+}
+
+pub const MAX_METHODS: usize = 10;
+
 pub trait RPCService {
+    type Method;
+    type Packet;
+    type Future: Future<Item = Option<Response<Self::Packet>>, Error = Error>;
+    // type FutureRevisit: Future<Item = (), Error = Error>;
+
+    fn get_id() -> u32;
     fn get_name() -> &'static str;
     fn get_hash() -> u32;
-    fn get_methods() -> [&'static str; 10];
+    fn get_methods() -> [(&'static str, u32); MAX_METHODS];
 
-    // fn invoke(&mut self, method: u32, data: Bytes) -> impl Future<Item=Option<Bytes>, Error=RPCError>;
+    fn validate_request(request_method_id: u32, packet: &Request<Self::Packet>) -> Result<()>;
+
+    fn call(&mut self, method: Self::Method, packet: Request<Self::Packet>) -> Self::Future;
+    // fn revisit(&mut self, packet: Response<Self::Packet>) -> Self::FutureRevisit;
 }
 
 #[cfg(test)]

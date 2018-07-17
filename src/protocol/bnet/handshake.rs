@@ -9,11 +9,11 @@ use tokio_codec::Decoder;
 use tokio_tcp::TcpStream;
 use tokio_timer::Deadline;
 
-use incite_gen::prost::Message;
-use incite_gen::proto::bnet::protocol::connection::ConnectRequest;
 use protocol::bnet::frame::BNetCodec;
-use protocol::bnet::session::{Error, ErrorKind, LightWeightSession, Result};
+use protocol::bnet::session::light::LightWeightSession;
+use protocol::bnet::session::{Error, ErrorKind, Result};
 use servers::lobby::LobbyState;
+use services::bnet::ConnectionService;
 
 const SESSION_SETUP_DEADLINE_SECS: u64 = 5;
 
@@ -47,19 +47,29 @@ pub fn handle_client(
     // Wrap the handshake with a deadline. The deadline allows us to time-out the connection
     // and cleanup the resources allocated to accomodate a new client connection.
     let handshake_deadline = Instant::now() + Duration::from_secs(SESSION_SETUP_DEADLINE_SECS);
-    let handshake = Deadline::new(handshake, handshake_deadline)
+    let handshake = Deadline::new(handshake, handshake_deadline);
+    let handshake = handshake
         .map_err(|deadline_err| match deadline_err.into_inner() {
             Some(setup_error) => setup_error,
             _ => Error::from_kind(ErrorKind::Timeout),
         })
+        /*
         // Only look at the error without touching the future-chain.
         .inspect_err(move |error| {
             warn!(logger_handshake, "Handshake failed"; "error" => ?error);
+        })
+        */
+        // Todo: remove this map_err in favor of inspect_err (above). The latter is currently not
+        // supported within futures-0.1 by mistake.
+        .map_err(move |error| {
+            warn!(logger_handshake, "Handshake failed"; "error" => ?error);
+            error
         })
         .and_then(move |session| LightWeightSession::build_session(session, shared_state))
         .map_err(move |error| {
             error!(logger_op, "Client handling returned an error"; "error" => ?error);
         });
+
     // tokio:spawn() requires a future which returns '()' as Item AND Error.
     tokio::spawn(handshake);
     Ok(())
@@ -67,32 +77,13 @@ pub fn handle_client(
 
 #[async]
 fn handshake_internal(session: LightWeightSession) -> Result<LightWeightSession> {
-    let LightWeightSession {
-        codec,
-        address,
-        // logger,
-    } = session;
-    let (rpc_connect, codec) = match await!(codec.into_future()) {
-        Ok((Some(frame), stream)) => (frame, stream),
-        Ok((None, _)) => Err(ErrorKind::ClientDisconnected)?,
-        Err((err, _)) => Err(err)?,
-    };
+    let (mut session, connect_request) = await!(session.read_request())?;
+    let (connect_request, connect_response) =
+        await!(ConnectionService::connect_direct(connect_request))?;
+    if let Some(response_data) = connect_response {
+        let response_packet = connect_request.into_response(response_data);
+        session = await!(session.send_response(response_packet))?;
+    }
 
-    match (rpc_connect.header.service_id, rpc_connect.header.method_id) {
-        (s_id, Some(m_id)) if s_id == 0 && m_id == 1 => {}
-        _ => Err(ErrorKind::ProcedureFail("connect_request"))?,
-    };
-
-    let request = ConnectRequest::decode(&rpc_connect.body)
-        .map_err(|_| ErrorKind::ProcedureFail("connect_request"))?;
-    // trace!(logger, "ConnectRequest"; "data" => ?request);
-
-    // TODO
-    // trace!(logger, "Handshake finished");
-
-    Ok(LightWeightSession {
-        codec,
-        address,
-        // logger,
-    })
+    Ok(session)
 }

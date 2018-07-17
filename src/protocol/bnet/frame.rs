@@ -7,15 +7,15 @@ use incite_gen::proto::bnet::protocol::Header;
 // 2 bytes long preamble, interpreted as U16BE
 const HEADER_PREAMBLE_LENGTH: usize = 2;
 
-pub mod error {
+mod error {
     use incite_gen::prost;
     use std::io;
 
     error_chain!{
         foreign_links {
             Io(io::Error) #[doc = "Error during IO"];
-            ProtoEncode(prost::EncodeError) #[doc = "Error during Protobuffer encoding"];
             ProtoDecode(prost::DecodeError) #[doc = "Error during Protobuffer decoding"];
+            ProtoEncode(prost::EncodeError) #[doc = "Error during Protobuffer encoding"];
         }
 
         errors {
@@ -42,7 +42,7 @@ pub struct BNetPacket {
 }
 
 impl BNetPacket {
-    fn new(header: Header, body: Bytes) -> Self {
+    pub fn new(header: Header, body: Bytes) -> Self {
         Self { header, body }
     }
 }

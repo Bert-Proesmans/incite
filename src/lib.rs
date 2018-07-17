@@ -1,4 +1,4 @@
-#![feature(proc_macro, proc_macro_non_items, generators)]
+#![feature(proc_macro_non_items, generators, use_extern_macros)]
 // TODO; Remove this bandaid.
 // Also introduce a #[deny(missing_docs, dead_code)] to keep the code clean.
 #![allow(dead_code)]
