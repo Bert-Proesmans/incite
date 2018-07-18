@@ -4,7 +4,7 @@ use std::default::Default;
 use incite_gen::proto::bnet::protocol::Header;
 use protocol::bnet::frame::BNetPacket;
 use protocol::bnet::session::{ErrorKind, Result};
-use service::{RPCService, Request, Response};
+use rpc::system::{RPCService, Request, Response};
 use services::bnet::ResponseService;
 
 impl Request<BNetPacket> {

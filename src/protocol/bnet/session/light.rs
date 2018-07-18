@@ -11,8 +11,8 @@ use tokio_tcp::TcpStream;
 use protocol::bnet::frame::{BNetCodec, BNetPacket};
 use protocol::bnet::session::full::LobbyClientSession;
 use protocol::bnet::session::{ErrorKind, Result};
+use rpc::system::{Request, Response};
 use servers::lobby::LobbyState;
-use service::{Request, Response};
 
 pub struct LightWeightSession {
     pub address: SocketAddr,
@@ -65,13 +65,16 @@ where
 }
 
 impl LightWeightSession {
-    pub fn build_session(self, shared_state: Arc<Mutex<LobbyState>>) -> LobbyClientSession {
+    pub fn construct_client_session(
+        self,
+        shared_state: Arc<Mutex<LobbyState>>,
+    ) -> LobbyClientSession {
         let LightWeightSession {
             address,
             codec,
-            // logger,
+            logger,
             ..
         } = self;
-        LobbyClientSession::new(address, codec.unwrap(), /* logger, */ shared_state)
+        LobbyClientSession::new(address, codec.unwrap(), logger, shared_state)
     }
 }

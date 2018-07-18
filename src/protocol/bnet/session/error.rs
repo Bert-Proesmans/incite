@@ -1,6 +1,6 @@
 use incite_gen::prost;
 use protocol::bnet::frame;
-use service;
+use rpc;
 use std::io;
 
 error_chain!{
@@ -29,7 +29,7 @@ error_chain!{
 
     links {
         Framing(frame::Error, frame::ErrorKind);
-        Service(service::Error, service::ErrorKind);
+        Service(rpc::Error, rpc::ErrorKind);
     }
 
     foreign_links {

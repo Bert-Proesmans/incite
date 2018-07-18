@@ -1,11 +1,13 @@
+use bytes::Bytes;
 use futures::future;
 use futures::prelude::*;
-use std::u32::MAX;
 
 use protocol::bnet::frame::BNetPacket;
-use service::{
-    hash_service_name, Error, ErrorKind, RPCService, Request, Response, Result, MAX_METHODS,
+use rpc::system::{
+    RPCReceiver, RPCResponder, RPCResult, RPCService, Request, Response, MAX_METHODS,
 };
+use rpc::util::hash_service_name;
+use rpc::{Error, ErrorKind, Result};
 use services::bnet::service_info::ExportedServiceID;
 
 #[repr(u32)]
@@ -22,9 +24,8 @@ impl ResponseService {
 
 impl RPCService for ResponseService {
     type Method = ResponseMethod;
-    type Packet = BNetPacket;
-    type Future = Box<dyn Future<Item = Option<Response<Self::Packet>>, Error = Error>>;
-    // type FutureRevisit = Box<Future<Item = (), Error = Error>>;
+    type Incoming = BNetPacket;
+    type Outgoing = BNetPacket;
 
     fn get_id() -> u32 {
         ExportedServiceID::ResponseService as u32
@@ -38,52 +39,64 @@ impl RPCService for ResponseService {
         hash_service_name(Self::get_name())
     }
 
-    fn get_methods() -> [(&'static str, u32); MAX_METHODS] {
+    fn get_methods() -> [Option<(&'static str, &'static Self::Method)>; MAX_METHODS] {
         [
-            ("Respond", ResponseMethod::Respond as u32),
-            ("", MAX),
-            ("", MAX),
-            ("", MAX),
-            ("", MAX),
-            ("", MAX),
-            ("", MAX),
-            ("", MAX),
-            ("", MAX),
-            ("", MAX),
+            Some(("Respond", &Self::METHOD_RESPOND)),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         ]
     }
+}
 
-    fn validate_request(request_method_id: u32, packet: &Request<Self::Packet>) -> Result<()> {
+impl RPCResponder for ResponseService {
+    type Future = Box<dyn Future<Item = RPCResult<Self::Outgoing>, Error = Error>>;
+
+    fn validate_request(packet: &Request<Self::Incoming>) -> Result<Self::Method> {
         let ref header = packet.as_ref().into_inner().header;
-        let method_id = header
+        let method = header
             .method_id
             .ok_or(ErrorKind::UnknownRequest(Self::get_name()))?;
-        if request_method_id != method_id {
-            Err(ErrorKind::InvalidRequest(method_id, Self::get_name()))?;
-        }
 
-        let is_known_method = Self::get_methods()
+        let known_methods = Self::get_methods();
+        let mut matched_method = known_methods
             .iter()
-            .map(|(_, m_id)| *m_id)
-            .any(move |m| m < (MAX_METHODS as u32) && m == request_method_id);
-        if !is_known_method {
-            Err(ErrorKind::InvalidRequest(method_id, Self::get_name()))?;
+            .filter_map(move |x| {
+                if let Some((_, &m_id)) = x {
+                    if (m_id as u32) == method {
+                        return Some(m_id);
+                    }
+                }
+                None
+            })
+            .take(1);
+
+        if let Some(found_method) = matched_method.next() {
+            return Ok(found_method);
         }
 
-        Ok(())
+        Err(ErrorKind::InvalidRequest(method, Self::get_name()).into())
     }
 
-    fn call(&mut self, method: Self::Method, packet: Request<Self::Packet>) -> Self::Future {
-        if let Err(e) = Self::validate_request(method as u32, &packet) {
-            return Box::new(future::err(e));
-        }
+    fn call(&mut self, method: Self::Method, payload: Bytes) -> Self::Future {
+        unimplemented!()
+    }
+}
 
+impl RPCReceiver for ResponseService {
+    type Future = Box<dyn Future<Item = RPCResult<Self::Outgoing>, Error = Error>>;
+
+    fn validate_response(packet: &Response<Self::Incoming>) -> Result<Self::Method> {
         unimplemented!()
     }
 
-    /*
-    fn revisit(&mut self, packet: Response<Self::Packet>) -> Self::FutureRevisit {
+    fn revisit(&mut self, payload: Bytes) -> Self::Future {
         unimplemented!()
     }
-    */
 }

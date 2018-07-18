@@ -4,12 +4,11 @@ use futures::prelude::*;
 use incite_gen::prost::Message;
 use protocol::bnet::frame::BNetPacket;
 use protocol::bnet::session::light::LightWeightSession;
-use service::{
-    hash_service_name, Error, ErrorKind, RPCService, Request, Response, Result, MAX_METHODS,
-};
+use rpc::system::{RPCResponder, RPCResult, RPCService, Request, MAX_METHODS};
+use rpc::util::hash_service_name;
+use rpc::{Error, ErrorKind, Result};
 use services::bnet::service_info::{ExportedServiceID, SERVICES_EXPORTED, SERVICES_IMPORTED};
 use std::default::Default;
-use std::u32::MAX;
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy)]
@@ -36,13 +35,131 @@ impl ConnectionService {
     pub const METHOD_REQUEST_DISCONNECT: ConnectionMethod = ConnectionMethod::RequestDisconnect;
 
     #[async]
-    fn connect_op(packet: Request<BNetPacket>) -> Result<(Request<BNetPacket>, Option<Bytes>)> {
-        use incite_gen::proto::bnet::protocol::connection::ConnectRequest;
+    fn connect_op(payload: Bytes) -> Result<RPCResult<BNetPacket>> {
+        unimplemented!()
+    }
 
-        let packet_body = packet.as_ref().into_inner().body.clone();
-        let _request = ConnectRequest::decode(packet_body)?;
+    #[async]
+    fn bind_op(_data: Bytes) -> Result<Option<Bytes>> {
+        Ok(None)
+    }
 
-        Ok((packet, None))
+    #[async]
+    fn echo_op(_data: Bytes) -> Result<Option<Bytes>> {
+        Ok(None)
+    }
+
+    #[async]
+    fn force_disconnect_op(_data: Bytes) -> Result<Option<Bytes>> {
+        Ok(None)
+    }
+
+    #[async]
+    fn keep_alive_op(_data: Bytes) -> Result<Option<Bytes>> {
+        Ok(None)
+    }
+
+    #[async]
+    fn encrypt_op(_data: Bytes) -> Result<Option<Bytes>> {
+        Ok(None)
+    }
+
+    #[async]
+    fn request_disconnect_op(_data: Bytes) -> Result<Option<Bytes>> {
+        Ok(None)
+    }
+}
+
+impl RPCService for ConnectionService {
+    type Method = ConnectionMethod;
+    type Incoming = BNetPacket;
+    type Outgoing = BNetPacket;
+
+    fn get_id() -> u32 {
+        ExportedServiceID::ConnectionService as u32
+    }
+
+    fn get_name() -> &'static str {
+        "bnet.protocol.connection.ConnectionService"
+    }
+
+    fn get_hash() -> u32 {
+        hash_service_name(Self::get_name())
+    }
+
+    fn get_methods() -> [Option<(&'static str, &'static Self::Method)>; MAX_METHODS] {
+        [
+            Some(("Connect", &Self::METHOD_CONNECT)),
+            Some(("Bind", &Self::METHOD_BIND)),
+            Some(("Echo", &Self::METHOD_ECHO)),
+            Some(("ForceDisconnect", &Self::METHOD_FORCE_DISCONNECT)),
+            Some(("KeepAlive", &Self::METHOD_KEEP_ALIVE)),
+            Some(("Encrypt", &Self::METHOD_ENCRYPT)),
+            Some(("RequestDisconnect", &Self::METHOD_REQUEST_DISCONNECT)),
+            None,
+            None,
+            None,
+        ]
+    }
+}
+
+impl RPCResponder for ConnectionService {
+    type Future = Box<dyn Future<Item = RPCResult<Self::Outgoing>, Error = Error>>;
+
+    fn validate_request(packet: &Request<Self::Incoming>) -> Result<Self::Method> {
+        let ref header = packet.as_ref().into_inner().header;
+        let method = header
+            .method_id
+            .ok_or(ErrorKind::UnknownRequest(Self::get_name()))?;
+
+        let known_methods = Self::get_methods();
+        let mut matched_method = known_methods
+            .iter()
+            .filter_map(move |x| {
+                if let Some((_, &m_id)) = x {
+                    if (m_id as u32) == method {
+                        return Some(m_id);
+                    }
+                }
+                None
+            })
+            .take(1);
+
+        if let Some(found_method) = matched_method.next() {
+            return Ok(found_method);
+        }
+
+        Err(ErrorKind::InvalidRequest(method, Self::get_name()).into())
+    }
+
+    fn call(&mut self, method: Self::Method, payload: Bytes) -> Self::Future {
+        match method {
+            ConnectionMethod::Connect => {
+                let response = Self::connect_op(payload);
+                Box::new(response)
+            }
+            // TODO; Remove catch all.
+            // _ => unreachable!(),
+            _ => Box::new(future::err(
+                ErrorKind::InvalidRequest(0, Self::get_name()).into(),
+            )),
+        }
+    }
+}
+
+// Separate impl block to not introduce one-of noise into our service.
+impl ConnectionService {
+    fn is_connect_request(packet: &Request<BNetPacket>) -> Result<()> {
+        let ref header = packet.as_ref().into_inner().header;
+        let method = header
+            .method_id
+            .ok_or(ErrorKind::UnknownRequest(Self::get_name()))?;
+
+        if method == (ConnectionMethod::Connect as u32) {
+            return Ok(());
+        }
+
+        Err(ErrorKind::InvalidRequest(method, Self::get_name()).into())
     }
 
     #[async]
@@ -55,8 +172,8 @@ impl ConnectionService {
             BindRequest, BindResponse, ConnectRequest, ConnectResponse,
         };
         use incite_gen::proto::bnet::protocol::ProcessId;
+        Self::is_connect_request(&packet)?;
 
-        Self::validate_request(ConnectionService::METHOD_CONNECT as u32, &packet)?;
         let packet_body = packet.as_ref().into_inner().body.clone();
         let request = ConnectRequest::decode(packet_body)?;
         trace!(session.logger, "Handshake"; "message" => ?request);
@@ -125,120 +242,4 @@ impl ConnectionService {
 
         Ok((session, packet, Some(buffer.freeze())))
     }
-
-    #[async]
-    fn bind_op(_data: Bytes) -> Result<Option<Bytes>> {
-        Ok(None)
-    }
-
-    #[async]
-    fn echo_op(_data: Bytes) -> Result<Option<Bytes>> {
-        Ok(None)
-    }
-
-    #[async]
-    fn force_disconnect_op(_data: Bytes) -> Result<Option<Bytes>> {
-        Ok(None)
-    }
-
-    #[async]
-    fn keep_alive_op(_data: Bytes) -> Result<Option<Bytes>> {
-        Ok(None)
-    }
-
-    #[async]
-    fn encrypt_op(_data: Bytes) -> Result<Option<Bytes>> {
-        Ok(None)
-    }
-
-    #[async]
-    fn request_disconnect_op(_data: Bytes) -> Result<Option<Bytes>> {
-        Ok(None)
-    }
-}
-
-impl RPCService for ConnectionService {
-    type Method = ConnectionMethod;
-    type Packet = BNetPacket;
-    type Future = Box<dyn Future<Item = Option<Response<Self::Packet>>, Error = Error>>;
-    // type FutureRevisit = Box<Future<Item = (), Error = Error>>;
-
-    fn get_id() -> u32 {
-        ExportedServiceID::ConnectionService as u32
-    }
-
-    fn get_name() -> &'static str {
-        "bnet.protocol.connection.ConnectionService"
-    }
-
-    fn get_hash() -> u32 {
-        hash_service_name(Self::get_name())
-    }
-
-    fn get_methods() -> [(&'static str, u32); MAX_METHODS] {
-        [
-            ("Connect", ConnectionMethod::Connect as u32),
-            ("Bind", ConnectionMethod::Bind as u32),
-            ("Echo", ConnectionMethod::Echo as u32),
-            ("ForceDisconnect", ConnectionMethod::ForceDisconnect as u32),
-            ("KeepAlive", ConnectionMethod::KeepAlive as u32),
-            ("Encrypt", ConnectionMethod::Encrypt as u32),
-            (
-                "RequestDisconnect",
-                ConnectionMethod::RequestDisconnect as u32,
-            ),
-            ("", MAX),
-            ("", MAX),
-            ("", MAX),
-        ]
-    }
-
-    fn validate_request(request_method_id: u32, packet: &Request<Self::Packet>) -> Result<()> {
-        let ref header = packet.as_ref().into_inner().header;
-        let method_id = header
-            .method_id
-            .ok_or(ErrorKind::UnknownRequest(Self::get_name()))?;
-        if request_method_id != method_id {
-            Err(ErrorKind::InvalidRequest(method_id, Self::get_name()))?;
-        }
-
-        let is_known_method = Self::get_methods()
-            .iter()
-            .map(|(_, m_id)| *m_id)
-            .any(move |m| m < (MAX_METHODS as u32) && m == request_method_id);
-        if !is_known_method {
-            Err(ErrorKind::InvalidRequest(method_id, Self::get_name()))?;
-        }
-
-        Ok(())
-    }
-
-    fn call(&mut self, method: Self::Method, packet: Request<BNetPacket>) -> Self::Future {
-        if let Err(e) = Self::validate_request(method as u32, &packet) {
-            return Box::new(future::err(e));
-        }
-
-        let response_mapper = |resp| {
-            let (request, response): (Request<BNetPacket>, Option<Bytes>) = resp;
-            response.map(|bytes| request.into_response(bytes))
-        };
-
-        match method {
-            ConnectionMethod::Connect => {
-                let response = Self::connect_op(packet).map(response_mapper);
-                Box::new(response)
-            }
-            // TODO; Remove catch all.
-            // _ => unreachable!(),
-            _ => Box::new(future::err(
-                ErrorKind::InvalidRequest(0, Self::get_name()).into(),
-            )),
-        }
-    }
-
-    /*
-    fn revisit(&mut self, packet: Response<BNetPacket>) -> Self::FutureRevisit {
-        unimplemented!()
-    }
-    */
 }

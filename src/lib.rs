@@ -37,10 +37,10 @@ extern crate diesel;
 pub mod log;
 pub mod models;
 pub mod protocol;
+pub mod rpc;
 #[allow(missing_docs)]
 pub mod schema;
 pub mod servers;
-pub mod service;
 pub mod services;
 pub mod setup;
 

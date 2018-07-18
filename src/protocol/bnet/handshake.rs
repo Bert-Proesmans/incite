@@ -31,17 +31,20 @@ impl<T: fmt::Debug + Send + Sync> slog::Value for OwnedValueWrapper<T> {
 
 pub fn handle_client(
     client: TcpStream,
-    shared_state: Arc<Mutex<LobbyState>>,
+    server_state: Arc<Mutex<LobbyState>>,
     root_logger: slog::Logger,
 ) -> Result<()> {
     let address = client.peer_addr()?;
-    // Creates a new child logger for assignment to the session.
+    // Each client session receives a child logger instance, look at the data passed to o!.
+    // Each log write to the child logger will automatically contain the same client identifier
+    // for tracking.
+    // TODO; Figure out how to remove the OwnedValueWrapper for address.
     let child_logger = root_logger.new(o!("connection" => OwnedValueWrapper(address)));
-    let (logger_handshake, logger_op) = (child_logger.clone(), child_logger.clone());
+    trace!(child_logger, "Client connected");
+
+    let (logger_handshake, logger_session) = (child_logger.clone(), child_logger.clone());
     let codec = BNetCodec::new().framed(client);
     let session = LightWeightSession::build(address, codec, child_logger);
-
-    trace!(logger_op, "Attempting client handshake"; "address" => ?session.address);
 
     let handshake = handshake_internal(session);
     // Wrap the handshake with a deadline. The deadline allows us to time-out the connection
@@ -65,9 +68,9 @@ pub fn handle_client(
             warn!(logger_handshake, "Handshake failed"; "error" => ?error);
             error
         })
-        .and_then(move |session| LightWeightSession::build_session(session, shared_state))
+        .and_then(move |session| LightWeightSession::construct_client_session(session, server_state))
         .map_err(move |error| {
-            error!(logger_op, "Client handling returned an error"; "error" => ?error);
+            error!(logger_session, "Client handling returned an error"; "error" => ?error);
         });
 
     // tokio:spawn() requires a future which returns '()' as Item AND Error.
