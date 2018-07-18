@@ -77,7 +77,7 @@ impl Encoder for BNetCodec {
         destination.reserve(data_length);
 
         let header_preamble: u16 = header.encoded_len() as _;
-        BigEndian::write_u16(destination, header_preamble);
+        destination.put_u16_be(header_preamble);
         header.encode(destination)?;
         destination.put(body);
 
@@ -95,7 +95,7 @@ impl Decoder for BNetCodec {
                 return Ok(None);
             }
 
-            let length_buf = src.split_to(HEADER_PREAMBLE_LENGTH).freeze();
+            let mut length_buf = src.split_to(HEADER_PREAMBLE_LENGTH).freeze();
             // TLS detection
             // https://stackoverflow.com/a/10355804
             match (length_buf[0], length_buf[1]) {
@@ -103,7 +103,7 @@ impl Decoder for BNetCodec {
                 _ => {}
             }
 
-            let header_length: u16 = BigEndian::read_u16(&length_buf);
+            let header_length: u16 = BigEndian::read_u16(&mut length_buf);
             self.header_length = Some(header_length);
         }
 

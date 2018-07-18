@@ -1,24 +1,26 @@
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use futures::future;
 use futures::prelude::*;
 use incite_gen::prost::Message;
-use incite_gen::proto::bnet::protocol::connection::ConnectRequest;
 use protocol::bnet::frame::BNetPacket;
+use protocol::bnet::session::light::LightWeightSession;
 use service::{
     hash_service_name, Error, ErrorKind, RPCService, Request, Response, Result, MAX_METHODS,
 };
+use services::bnet::service_info::{ExportedServiceID, SERVICES_EXPORTED, SERVICES_IMPORTED};
+use std::default::Default;
 use std::u32::MAX;
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy)]
 pub enum ConnectionMethod {
-    Connect = 0,
-    Bind = 1,
-    Echo = 2,
-    ForceDisconnect = 3,
-    KeepAlive = 4,
-    Encrypt = 5,
-    RequestDisconnect = 6,
+    Connect = 1,
+    Bind = 2,
+    Echo = 3,
+    ForceDisconnect = 4,
+    KeepAlive = 5,
+    Encrypt = 6,
+    RequestDisconnect = 7,
 }
 
 #[derive(Debug, Default)]
@@ -35,6 +37,8 @@ impl ConnectionService {
 
     #[async]
     fn connect_op(packet: Request<BNetPacket>) -> Result<(Request<BNetPacket>, Option<Bytes>)> {
+        use incite_gen::proto::bnet::protocol::connection::ConnectRequest;
+
         let packet_body = packet.as_ref().into_inner().body.clone();
         let _request = ConnectRequest::decode(packet_body)?;
 
@@ -43,13 +47,83 @@ impl ConnectionService {
 
     #[async]
     pub fn connect_direct(
+        session: LightWeightSession,
         packet: Request<BNetPacket>,
-    ) -> Result<(Request<BNetPacket>, Option<Bytes>)> {
+    ) -> Result<(LightWeightSession, Request<BNetPacket>, Option<Bytes>)> {
+        use chrono::Local;
+        use incite_gen::proto::bnet::protocol::connection::{
+            BindRequest, BindResponse, ConnectRequest, ConnectResponse,
+        };
+        use incite_gen::proto::bnet::protocol::ProcessId;
+
         Self::validate_request(ConnectionService::METHOD_CONNECT as u32, &packet)?;
         let packet_body = packet.as_ref().into_inner().body.clone();
-        let _request = ConnectRequest::decode(packet_body)?;
+        let request = ConnectRequest::decode(packet_body)?;
+        trace!(session.logger, "Handshake"; "message" => ?request);
 
-        Ok((packet, None))
+        let bind_request = request.bind_request;
+        if bind_request.is_none() {
+            Err(ErrorKind::InvalidRequest(
+                ConnectionService::METHOD_CONNECT as u32,
+                Self::get_name(),
+            ))?;
+        }
+
+        let BindRequest {
+            imported_service_hash: exported_services,
+            exported_service: imported_services,
+        } = bind_request.unwrap();
+        // All imported service IDs must match our service info.
+        let match_imported_service = imported_services.into_iter().all(|s| {
+            if let Some(id) = SERVICES_IMPORTED.get(&s.hash).map(|m| (*m) as u32) {
+                if id == s.id {
+                    return true;
+                }
+            }
+            false
+        });
+        if !match_imported_service {
+            Err(ErrorKind::InvalidRequest(
+                ConnectionService::METHOD_CONNECT as u32,
+                Self::get_name(),
+            ))?;
+        }
+        // We can build our own mapping for exported services according to the service info.
+        let service_bindings: Vec<u32> = exported_services
+            .into_iter()
+            .map(|hash| {
+                SERVICES_EXPORTED
+                    .get(&hash)
+                    .map(|m| (*m) as u32)
+                    .unwrap_or(0)
+            })
+            .collect();
+        let bind_response = BindResponse {
+            imported_service_id: service_bindings,
+        };
+        let time = Local::now().timestamp();
+        let precise_time = Local::now().timestamp_nanos();
+        let response_msg = ConnectResponse {
+            server_id: ProcessId {
+                label: 3868510373,
+                epoch: time as u32,
+            },
+            client_id: Some(ProcessId {
+                label: 1255760,
+                epoch: time as u32,
+            }),
+            bind_result: Some(0),
+            bind_response: Some(bind_response),
+            server_time: Some(precise_time as u64),
+            ..Default::default()
+        };
+
+        trace!(session.logger, "handshake response ready"; "response" => ?response_msg);
+        let mut buffer = BytesMut::new();
+        buffer.reserve(response_msg.encoded_len());
+        response_msg.encode(&mut buffer)?;
+
+        Ok((session, packet, Some(buffer.freeze())))
     }
 
     #[async]
@@ -90,7 +164,7 @@ impl RPCService for ConnectionService {
     // type FutureRevisit = Box<Future<Item = (), Error = Error>>;
 
     fn get_id() -> u32 {
-        super::ServiceIDs::ConnectionService as u32
+        ExportedServiceID::ConnectionService as u32
     }
 
     fn get_name() -> &'static str {
@@ -121,16 +195,18 @@ impl RPCService for ConnectionService {
 
     fn validate_request(request_method_id: u32, packet: &Request<Self::Packet>) -> Result<()> {
         let ref header = packet.as_ref().into_inner().header;
-        let method_id = header.method_id.ok_or(ErrorKind::UnknownRequest(Self::get_name()))?;
+        let method_id = header
+            .method_id
+            .ok_or(ErrorKind::UnknownRequest(Self::get_name()))?;
         if request_method_id != method_id {
             Err(ErrorKind::InvalidRequest(method_id, Self::get_name()))?;
         }
 
         let is_known_method = Self::get_methods()
-                .iter()
-                .map(|(_, m_id)| *m_id)
-                .any(move |m| m < (MAX_METHODS as u32) && m == request_method_id);
-        if ! is_known_method {
+            .iter()
+            .map(|(_, m_id)| *m_id)
+            .any(move |m| m < (MAX_METHODS as u32) && m == request_method_id);
+        if !is_known_method {
             Err(ErrorKind::InvalidRequest(method_id, Self::get_name()))?;
         }
 
@@ -154,9 +230,9 @@ impl RPCService for ConnectionService {
             }
             // TODO; Remove catch all.
             // _ => unreachable!(),
-            _ => {
-                Box::new(future::err(ErrorKind::InvalidRequest(0, Self::get_name()).into()))
-            },
+            _ => Box::new(future::err(
+                ErrorKind::InvalidRequest(0, Self::get_name()).into(),
+            )),
         }
     }
 

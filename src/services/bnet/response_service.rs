@@ -1,9 +1,12 @@
-use futures::prelude::*;
 use futures::future;
+use futures::prelude::*;
 use std::u32::MAX;
 
 use protocol::bnet::frame::BNetPacket;
-use service::{hash_service_name, Error, RPCService, ErrorKind, Request, Response, Result, MAX_METHODS};
+use service::{
+    hash_service_name, Error, ErrorKind, RPCService, Request, Response, Result, MAX_METHODS,
+};
+use services::bnet::service_info::ExportedServiceID;
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy)]
@@ -24,7 +27,7 @@ impl RPCService for ResponseService {
     // type FutureRevisit = Box<Future<Item = (), Error = Error>>;
 
     fn get_id() -> u32 {
-        super::ServiceIDs::ResponseService as u32
+        ExportedServiceID::ResponseService as u32
     }
 
     fn get_name() -> &'static str {
@@ -52,16 +55,18 @@ impl RPCService for ResponseService {
 
     fn validate_request(request_method_id: u32, packet: &Request<Self::Packet>) -> Result<()> {
         let ref header = packet.as_ref().into_inner().header;
-        let method_id = header.method_id.ok_or(ErrorKind::UnknownRequest(Self::get_name()))?;
+        let method_id = header
+            .method_id
+            .ok_or(ErrorKind::UnknownRequest(Self::get_name()))?;
         if request_method_id != method_id {
             Err(ErrorKind::InvalidRequest(method_id, Self::get_name()))?;
         }
 
         let is_known_method = Self::get_methods()
-                .iter()
-                .map(|(_, m_id)| *m_id)
-                .any(move |m| m < (MAX_METHODS as u32) && m == request_method_id);
-        if ! is_known_method {
+            .iter()
+            .map(|(_, m_id)| *m_id)
+            .any(move |m| m < (MAX_METHODS as u32) && m == request_method_id);
+        if !is_known_method {
             Err(ErrorKind::InvalidRequest(method_id, Self::get_name()))?;
         }
 

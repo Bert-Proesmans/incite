@@ -17,7 +17,7 @@ use service::{Request, Response};
 pub struct LightWeightSession {
     pub address: SocketAddr,
     pub codec: Option<Framed<TcpStream, BNetCodec>>,
-    // pub logger: slog::Logger,
+    pub logger: slog::Logger,
     buffer: BytesMut,
 }
 
@@ -28,14 +28,14 @@ where
     pub fn build(
         address: SocketAddr,
         codec: Framed<TcpStream, BNetCodec>,
-        _logger: slog::Logger,
+        logger: slog::Logger,
     ) -> Self {
         let buffer = BytesMut::new();
         let codec = Some(codec);
         LightWeightSession {
             address,
             codec,
-            //  logger,
+            logger,
             buffer,
         }
     }

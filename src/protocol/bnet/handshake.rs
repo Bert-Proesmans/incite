@@ -77,13 +77,26 @@ pub fn handle_client(
 
 #[async]
 fn handshake_internal(session: LightWeightSession) -> Result<LightWeightSession> {
-    let (mut session, connect_request) = await!(session.read_request())?;
-    let (connect_request, connect_response) =
-        await!(ConnectionService::connect_direct(connect_request))?;
+    let (session, connect_request) = await!(session.read_request())?;
+    {
+        let ref request_header = connect_request.as_ref().into_inner().header;
+        trace!(session.logger, "Handshake initiated"; "header" => ?request_header);
+    }
+
+    let (session, connect_request, connect_response) =
+        await!(ConnectionService::connect_direct(session, connect_request))?;
+    // Mutably rebind session so the response logic can overwrite it.
+    let mut session = session;
     if let Some(response_data) = connect_response {
         let response_packet = connect_request.into_response(response_data);
         session = await!(session.send_response(response_packet))?;
     }
+
+    trace!(session.logger, "Handshake completed");
+
+    // DEBUG: Read the next request from the stream
+    let (session, request) = await!(session.read_request())?;
+    trace!(session.logger, "Next request received"; "packet" => ?request);
 
     Ok(session)
 }

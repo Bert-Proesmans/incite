@@ -19,6 +19,10 @@ extern crate tokio_signal;
 extern crate tokio_tcp;
 extern crate tokio_timer;
 
+#[macro_use]
+extern crate lazy_static;
+#[macro_use]
+extern crate maplit;
 // #[macro_use]
 extern crate futures_await as futures;
 #[macro_use]
