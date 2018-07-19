@@ -53,8 +53,11 @@
  * 3826086206   - bnet.protocol.game_master.GameRequestSubscriber
  */
 
-// use super::*;
+use super::*;
+use frunk::{HCons, HNil, Hlist};
 use std::collections::HashMap;
+
+use rpc::system::RPCService;
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy)]
@@ -100,10 +103,16 @@ pub enum ImportedServiceID {
     ResponseService = 254,
 }
 
+pub type ServiceStorage = Hlist![
+    ConnectionService,
+    ResponseService,
+    // .. more to be implemented..
+];
+
 lazy_static! {
-    pub static ref SERVICES_EXPORTED: HashMap<u32, ExportedServiceID> = {
+    pub static ref SERVICES_EXPORTED_BINDING: HashMap<u32, ExportedServiceID> = {
         hashmap!{
-            1698982289 => ExportedServiceID::ConnectionService,
+            ConnectionService::get_hash() => ExportedServiceID::ConnectionService,
 
             1658456209 => ExportedServiceID::AccountService,
             1128824125 => ExportedServiceID::AchievementsService,
@@ -123,10 +132,10 @@ lazy_static! {
             170173073 => ExportedServiceID::SearchService,
             1041835658 => ExportedServiceID::UserManagerService,
 
-            3625566374 => ExportedServiceID::ResponseService,
+            ResponseService::get_hash() => ExportedServiceID::ResponseService,
         }
     };
-    pub static ref SERVICES_IMPORTED: HashMap<u32, ImportedServiceID> = {
+    pub static ref SERVICES_IMPORTED_BINDING: HashMap<u32, ImportedServiceID> = {
         hashmap!{
             1423956503 =>  ImportedServiceID::AccountNotify,
             3571241107 =>  ImportedServiceID::AchievementsNotify,
@@ -140,7 +149,7 @@ lazy_static! {
             3788189352 => ImportedServiceID::NotificationListener,
             3162975266 => ImportedServiceID::UserManagerNotify,
 
-            3625566374 => ImportedServiceID::ResponseService,
+            ResponseService::get_hash() => ImportedServiceID::ResponseService,
         }
     };
 }

@@ -14,6 +14,8 @@ incite-gen = {path = "incite-gen"}
 lazy_static = "1"
 maplit = "1"
 typed-builder = "0.1"
+frunk = "0.2.0"
+mashup = "0.1"
 futures-await = {git = "https://github.com/alexcrichton/futures-await", rev="cd38b74"}
 # The Tokio family is split into seperate crates which are explicitly imported!
 # The 'Tokio' crate itself contains useful abstractions.

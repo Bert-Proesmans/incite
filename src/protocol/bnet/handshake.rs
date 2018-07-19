@@ -86,12 +86,11 @@ fn handshake_internal(session: LightWeightSession) -> Result<LightWeightSession>
         trace!(session.logger, "Handshake initiated"; "header" => ?request_header);
     }
 
-    let (session, connect_request, connect_response) =
+    let (session, connect_response) =
         await!(ConnectionService::connect_direct(session, connect_request))?;
     // Mutably rebind session so the response logic can overwrite it.
     let mut session = session;
-    if let Some(response_data) = connect_response {
-        let response_packet = connect_request.into_response(response_data);
+    if let Some(response_packet) = connect_response {
         session = await!(session.send_response(response_packet))?;
     }
 

@@ -16,6 +16,7 @@ pub enum ResponseMethod {
     Respond = 0,
 }
 
+#[derive(Debug, Default)]
 pub struct ResponseService {}
 
 impl ResponseService {
@@ -84,7 +85,7 @@ impl RPCResponder for ResponseService {
         Err(ErrorKind::InvalidRequest(method, Self::get_name()).into())
     }
 
-    fn call(&mut self, method: Self::Method, payload: Bytes) -> Self::Future {
+    fn call(&mut self, method: Self::Method, packet: Request<Self::Incoming>) -> Self::Future {
         unimplemented!()
     }
 }
@@ -96,7 +97,7 @@ impl RPCReceiver for ResponseService {
         unimplemented!()
     }
 
-    fn revisit(&mut self, payload: Bytes) -> Self::Future {
+    fn revisit(&mut self, packet: Response<Self::Incoming>) -> Self::Future {
         unimplemented!()
     }
 }

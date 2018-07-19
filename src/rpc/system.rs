@@ -1,6 +1,7 @@
 use super::{Error, Result};
 use bytes::Bytes;
 use futures::prelude::*;
+use router::RoutablePacket;
 
 pub const MAX_METHODS: usize = 10;
 
@@ -20,7 +21,7 @@ pub trait RPCResponder: RPCService {
     type Future: Future<Item = RPCResult<Self::Outgoing>, Error = Error>;
 
     fn validate_request(packet: &Request<Self::Incoming>) -> Result<Self::Method>;
-    fn call(&mut self, method: Self::Method, payload: Bytes) -> Self::Future;
+    fn call(&mut self, method: Self::Method, packet: Request<Self::Incoming>) -> Self::Future;
 }
 
 // Implemented by Server imported services.
@@ -28,7 +29,7 @@ pub trait RPCReceiver: RPCService {
     type Future: Future<Item = RPCResult<Self::Outgoing>, Error = Error>;
 
     fn validate_response(packet: &Response<Self::Incoming>) -> Result<Self::Method>;
-    fn revisit(&mut self, payload: Bytes) -> Self::Future;
+    fn revisit(&mut self, packet: Response<Self::Incoming>) -> Self::Future;
 }
 
 #[derive(Debug)]
@@ -49,6 +50,7 @@ impl<Packet> From<Route<Packet>> for RPCResult<Packet> {
         RPCResult::Route(x)
     }
 }
+
 
 #[derive(Debug)]
 pub struct Request<Packet>(Packet);
@@ -87,22 +89,26 @@ impl<Packet> Response<Packet> {
 #[derive(Debug)]
 // This packet wrapper will get additionall fields to route
 // between clients as well.. soon(TM)
-pub struct Route<Packet>(Packet);
+pub struct Route<Packet>(u64, Packet);
 
 impl<Packet> Route<Packet> {
-    pub fn new(data: Packet) -> Self {
-        Route(data)
+    pub fn new(receiver: u64, data: Packet) -> Self {
+        Route(receiver, data)
     }
 
-    pub fn into_inner(self) -> Packet {
+    pub fn receiver(&self) -> u64 {
         self.0
     }
 
+    pub fn into_inner(self) -> Packet {
+        self.1
+    }
+
     pub fn as_ref(&self) -> Route<&Packet> {
-        Route::new(&self.0)
+        Route::new(self.0, &self.1)
     }
 
     pub fn into_request(self) -> Request<Packet> {
-        Request::new(self.0)
+        Request::new(self.1)
     }
 }

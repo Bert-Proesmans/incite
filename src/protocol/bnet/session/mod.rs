@@ -1,6 +1,6 @@
 mod error;
 pub mod full;
 pub mod light;
-pub mod util;
+pub mod router;
 
 pub use self::error::*;

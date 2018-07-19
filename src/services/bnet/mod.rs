@@ -1,4 +1,5 @@
 pub mod connection_service;
+mod packet_extension;
 pub mod response_service;
 pub mod service_info;
 

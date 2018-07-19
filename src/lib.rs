@@ -7,6 +7,9 @@
 // path. See https://github.com/rust-lang/rust/issues/50504.
 // This flag is allowed to reduce terminal noise while compiling.
 #![allow(proc_macro_derive_resolution_fallback)]
+// The routing table is built with a declarative macro, which nests deep. The following
+// attribute sets the nesting depth before the compiler is allowed to throw an error.
+#![recursion_limit = "1024"]
 
 extern crate bytes;
 extern crate chrono;
@@ -33,10 +36,15 @@ extern crate slog;
 extern crate error_chain;
 #[macro_use]
 extern crate diesel;
+#[macro_use]
+extern crate frunk;
+#[macro_use]
+extern crate mashup;
 
 pub mod log;
 pub mod models;
 pub mod protocol;
+pub mod router;
 pub mod rpc;
 #[allow(missing_docs)]
 pub mod schema;

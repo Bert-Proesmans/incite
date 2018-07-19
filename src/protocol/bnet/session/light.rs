@@ -49,7 +49,9 @@ where
             Err((err, _)) => Err(err)?,
         };
 
-        let packet = Request::from_bnet(packet)?;
+        let packet = packet
+            .try_as_request()
+            .map_err(|_| ErrorKind::MissingRequest)?;
         self.codec = Some(codec);
         Ok((self, packet))
     }

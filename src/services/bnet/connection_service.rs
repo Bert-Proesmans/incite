@@ -4,10 +4,12 @@ use futures::prelude::*;
 use incite_gen::prost::Message;
 use protocol::bnet::frame::BNetPacket;
 use protocol::bnet::session::light::LightWeightSession;
-use rpc::system::{RPCResponder, RPCResult, RPCService, Request, MAX_METHODS};
+use rpc::system::{RPCResponder, RPCResult, RPCService, Request, Response, MAX_METHODS};
 use rpc::util::hash_service_name;
 use rpc::{Error, ErrorKind, Result};
-use services::bnet::service_info::{ExportedServiceID, SERVICES_EXPORTED, SERVICES_IMPORTED};
+use services::bnet::service_info::{
+    ExportedServiceID, SERVICES_EXPORTED_BINDING, SERVICES_IMPORTED_BINDING,
+};
 use std::default::Default;
 
 #[repr(u32)]
@@ -35,7 +37,7 @@ impl ConnectionService {
     pub const METHOD_REQUEST_DISCONNECT: ConnectionMethod = ConnectionMethod::RequestDisconnect;
 
     #[async]
-    fn connect_op(payload: Bytes) -> Result<RPCResult<BNetPacket>> {
+    fn connect_op(packet: Request<BNetPacket>) -> Result<RPCResult<BNetPacket>> {
         unimplemented!()
     }
 
@@ -132,10 +134,10 @@ impl RPCResponder for ConnectionService {
         Err(ErrorKind::InvalidRequest(method, Self::get_name()).into())
     }
 
-    fn call(&mut self, method: Self::Method, payload: Bytes) -> Self::Future {
+    fn call(&mut self, method: Self::Method, packet: Request<Self::Incoming>) -> Self::Future {
         match method {
             ConnectionMethod::Connect => {
-                let response = Self::connect_op(payload);
+                let response = Self::connect_op(packet);
                 Box::new(response)
             }
             // TODO; Remove catch all.
@@ -165,16 +167,16 @@ impl ConnectionService {
     #[async]
     pub fn connect_direct(
         session: LightWeightSession,
-        packet: Request<BNetPacket>,
-    ) -> Result<(LightWeightSession, Request<BNetPacket>, Option<Bytes>)> {
+        request_packet: Request<BNetPacket>,
+    ) -> Result<(LightWeightSession, Option<Response<BNetPacket>>)> {
         use chrono::Local;
         use incite_gen::proto::bnet::protocol::connection::{
             BindRequest, BindResponse, ConnectRequest, ConnectResponse,
         };
         use incite_gen::proto::bnet::protocol::ProcessId;
-        Self::is_connect_request(&packet)?;
+        Self::is_connect_request(&request_packet)?;
 
-        let packet_body = packet.as_ref().into_inner().body.clone();
+        let packet_body = request_packet.as_ref().into_inner().body.clone();
         let request = ConnectRequest::decode(packet_body)?;
         trace!(session.logger, "Handshake"; "message" => ?request);
 
@@ -192,7 +194,7 @@ impl ConnectionService {
         } = bind_request.unwrap();
         // All imported service IDs must match our service info.
         let match_imported_service = imported_services.into_iter().all(|s| {
-            if let Some(id) = SERVICES_IMPORTED.get(&s.hash).map(|m| (*m) as u32) {
+            if let Some(id) = SERVICES_IMPORTED_BINDING.get(&s.hash).map(|m| (*m) as u32) {
                 if id == s.id {
                     return true;
                 }
@@ -209,7 +211,7 @@ impl ConnectionService {
         let service_bindings: Vec<u32> = exported_services
             .into_iter()
             .map(|hash| {
-                SERVICES_EXPORTED
+                SERVICES_EXPORTED_BINDING
                     .get(&hash)
                     .map(|m| (*m) as u32)
                     .unwrap_or(0)
@@ -240,6 +242,7 @@ impl ConnectionService {
         buffer.reserve(response_msg.encoded_len());
         response_msg.encode(&mut buffer)?;
 
-        Ok((session, packet, Some(buffer.freeze())))
+        let response_packet = request_packet.build_response(buffer.freeze());
+        Ok((session, Some(response_packet)))
     }
 }
